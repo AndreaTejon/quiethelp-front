@@ -6,6 +6,7 @@ import '../widgets/disclaimer_text.dart';
 import '../widgets/home_button.dart';
 import '../services/token_service.dart';
 import 'studentHomePage.dart';
+import '../services/token_storage.dart';
 
 class TokenPage extends StatefulWidget {
   const TokenPage({super.key});
@@ -39,10 +40,11 @@ class _TokenPageState extends State<TokenPage> {
       _errorDetails = null;
     });
 
-    _tokenService.validateToken(token).then((isValid) {
+    _tokenService.validateToken(token).then((isValid) async{
       if (!mounted) return;
       
       if (isValid) {
+        await TokenStorage.saveToken(token); //Se guarda el token
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(

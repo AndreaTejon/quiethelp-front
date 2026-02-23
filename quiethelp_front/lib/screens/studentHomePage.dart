@@ -14,6 +14,8 @@ import 'messageSent.dart';
 import 'chatHistoryStudent.dart';
 import 'signIn.dart';
 import 'aboutUs.dart';
+import '../services/token_storage.dart';
+import '../services/token_service.dart';
 
 class StudentHomePage extends StatefulWidget {
   final String? token;
@@ -33,11 +35,44 @@ class _StudentHomePageState extends State<StudentHomePage> {
   static const String _baseUrl = 'http://localhost:8080';
 
   @override
-  void initState() {
-    super.initState();
-    // IMPORTANTE: Escuchar cambios en el mensaje para actualizar el botón
-    msgCtrl.addListener(_onMessageChanged);
+void initState() {
+  super.initState();
+  // IMPORTANTE: Escuchar cambios en el mensaje para actualizar el botón
+  msgCtrl.addListener(_onMessageChanged);
+  
+  // 👇 VALIDAR EL TOKEN CUANDO SE ABRE LA PANTALLA
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _validarTokenAlIniciar();
+  });
+}
+
+bool _tokenValidado = false;
+
+void _validarTokenAlIniciar() async {
+  // Si ya se validó o no hay token, salir
+  if (_tokenValidado || widget.token == null) return;
+  
+  _tokenValidado = true;
+  
+  await Future.delayed(const Duration(milliseconds: 500)); //Retraso para evitar doble llamada
+  // 👇 ESTO USA EL MISMO TokenService
+  final tokenService = TokenService();
+  final esValido = await tokenService.validateToken(widget.token!);
+  
+  if (!esValido && mounted) {
+    _showSnackBar('Token inválido o expirado');
+    
+    // Borrar token guardado
+    await TokenStorage.clearToken();
+    
+    // Ir a login
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const SignInPage()),
+      (_) => false,
+    );
   }
+}
 
   @override
   void dispose() {
@@ -115,12 +150,16 @@ class _StudentHomePageState extends State<StudentHomePage> {
     };
 
     try {
+      print('🚀 Antes del http.post');
       final response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(body),
       );
-
+      print('✅ Después del http.post');
+      print('📥 Status code: ${response.statusCode}');
+      print('📥 Body: ${response.body}');
+/*
       if (!mounted) return;
 
       if (response.statusCode == 201) {
@@ -136,10 +175,45 @@ class _StudentHomePageState extends State<StudentHomePage> {
           context,
           MaterialPageRoute(builder: (_) => const MessageSent()),
         );
+*/      
+        print('🔍 Checking mounted: $mounted');
+        if (response.statusCode == 201) {
+        print('✅ Navegando a MessageSent...');
+        /*
+        // 1. PRIMERO navegar (con el contexto actual)
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MessageSent()),
+        ); */
+        
+     //   await Future.delayed(const Duration(milliseconds: 100));
+
+        // 2. DESPUÉS de regresar, limpiar (si el widget sigue montado)
+        if (mounted) {
+          msgCtrl.clear();
+          groupCtrl.clear();
+          setState(() {
+            curso = null;
+            topic = null;
+            _sending = false;
+          });
+        }
+
+        if (mounted) {
+          print('🧭 Antes del Navigator.push');
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(builder: (_) => const MessageSent()),
+          );
+          print('🧭 Después del Navigator.push');
+        }
+        
+        return; // Importante: salir para no ejecutar el setState de abajo
       } else if (response.statusCode == 401) {
+        if (!mounted) return; //Por el cambio en la lógica
         _showSnackBar('Token inválido o expirado');
         _logout();
       } else {
+        if (!mounted) return; //Por el cambio en la lógica
         String errorMsg = 'Error al enviar';
         try {
           final decoded = jsonDecode(response.body);
@@ -155,6 +229,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
         setState(() => _sending = false);
       }
     } catch (e) {
+      print('❌ Excepción: $e');
       if (!mounted) return;
       _showSnackBar('No se pudo conectar con el servidor');
       setState(() => _sending = false);
@@ -170,7 +245,8 @@ class _StudentHomePageState extends State<StudentHomePage> {
   void _push(Widget page) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => page));
 
-  void _logout() {
+  void _logout() async{
+    await TokenStorage.clearToken(); // ELiminar el token del móvil
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const SignInPage()),
@@ -493,4 +569,5 @@ class _StudentHomePageState extends State<StudentHomePage> {
           ],
         ),
       );
+      
 }

@@ -4,8 +4,14 @@ import 'package:http/http.dart' as http;
 
 class TokenService {
   static const String _baseUrl = 'http://localhost:8080';
+  static bool _isValidando = false;
   
   Future<bool> validateToken(String token) async {
+    if(_isValidando) {
+      print(('Ya hay una validación en curso'));
+      return true; //Se asume correcta
+    }
+    _isValidando = true;
     print('🔍 Validando token: $token');
     
     try {
