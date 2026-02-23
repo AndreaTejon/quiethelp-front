@@ -16,7 +16,7 @@ import 'signIn.dart';
 import 'aboutUs.dart';
 
 class StudentHomePage extends StatefulWidget {
-  final String? token; // Token recibido desde TokenPage
+  final String? token;
   
   const StudentHomePage({super.key, this.token});
 
@@ -32,6 +32,28 @@ class _StudentHomePageState extends State<StudentHomePage> {
 
   static const String _baseUrl = 'http://localhost:8080';
 
+  @override
+  void initState() {
+    super.initState();
+    // IMPORTANTE: Escuchar cambios en el mensaje para actualizar el botón
+    msgCtrl.addListener(_onMessageChanged);
+  }
+
+  @override
+  void dispose() {
+    // IMPORTANTE: Limpiar el listener
+    msgCtrl.removeListener(_onMessageChanged);
+    msgCtrl.dispose();
+    groupCtrl.dispose();
+    super.dispose();
+  }
+
+  // Forzar rebuild cuando cambia el mensaje
+  void _onMessageChanged() {
+    setState(() {});
+  }
+
+  // Getter que se reevalúa en cada rebuild
   bool get _isValid => topic != null && msgCtrl.text.trim().isNotEmpty;
 
   String _mapTarjeta(String t) {
@@ -47,8 +69,11 @@ class _StudentHomePageState extends State<StudentHomePage> {
     }
   }
 
+  String _getCurrentDate() {
+    return DateTime.now().toIso8601String();
+  }
+
   Future<void> _send() async {
-    // Validar que tenemos token
     if (widget.token == null) {
       _showSnackBar('Sesión no válida');
       _logout();
@@ -71,18 +96,19 @@ class _StudentHomePageState extends State<StudentHomePage> {
 
     final url = Uri.parse('$_baseUrl/api/conversaciones');
 
-    final body = {
-      "token": widget.token, // Usar el token recibido
+    final Map<String, dynamic> body = {
+      "token": widget.token,
       "emisor": {
         "tarjeta": _mapTarjeta(topic!),
-        "curso": curso,
-        "grupo": groupCtrl.text.trim().isEmpty ? null : groupCtrl.text.trim(),
+        if (curso != null) "curso": curso,
+        if (groupCtrl.text.trim().isNotEmpty) "grupo": groupCtrl.text.trim(),
       },
       "conversacion": {
         "mensajes": [
           {
             "emisor": "alumno",
             "mensaje": msg,
+            "fecha": _getCurrentDate(),
           }
         ]
       }
@@ -103,6 +129,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
         setState(() {
           curso = null;
           topic = null;
+          _sending = false;
         });
         
         Navigator.push(
@@ -113,7 +140,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
         _showSnackBar('Token inválido o expirado');
         _logout();
       } else {
-        String errorMsg = 'Error al enviar (${response.statusCode})';
+        String errorMsg = 'Error al enviar';
         try {
           final decoded = jsonDecode(response.body);
           if (decoded is Map) {
@@ -121,21 +148,16 @@ class _StudentHomePageState extends State<StudentHomePage> {
               errorMsg = decoded["error"].toString();
             } else if (decoded["mensaje"] != null) {
               errorMsg = decoded["mensaje"].toString();
-            } else if (decoded["errores"] != null) {
-              final errs = decoded["errores"];
-              if (errs is List && errs.isNotEmpty) {
-                errorMsg = errs.join('\n');
-              }
             }
           }
         } catch (_) {}
         _showSnackBar(errorMsg);
+        setState(() => _sending = false);
       }
     } catch (e) {
       if (!mounted) return;
       _showSnackBar('No se pudo conectar con el servidor');
-    } finally {
-      if (mounted) setState(() => _sending = false);
+      setState(() => _sending = false);
     }
   }
 
@@ -232,10 +254,10 @@ class _StudentHomePageState extends State<StudentHomePage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)), // CORREGIDO
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04), // CORREGIDO
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -318,7 +340,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w800,
-              color: Colors.black.withValues(alpha: 0.75), // CORREGIDO
+              color: Colors.black.withValues(alpha: 0.75),
             ),
           ),
           if (required) ...[
@@ -407,7 +429,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
           style: ElevatedButton.styleFrom(
             backgroundColor: _isValid 
                 ? AppColors.teal 
-                : AppColors.teal.withValues(alpha: 0.45), // CORREGIDO
+                : AppColors.teal.withValues(alpha: 0.45),
             foregroundColor: Colors.white,
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -440,7 +462,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
         decoration: BoxDecoration(
           color: AppColors.tealSoft,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.black.withValues(alpha: 0.05)), // CORREGIDO
+          border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
         ),
         child: Column(
           children: const [

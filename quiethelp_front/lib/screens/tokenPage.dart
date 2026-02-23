@@ -18,7 +18,7 @@ class _TokenPageState extends State<TokenPage> {
   final TextEditingController _controller = TextEditingController();
   final TokenService _tokenService = TokenService();
   bool _isValidating = false;
-  String? _errorDetails; // Para mostrar más detalles del error
+  String? _errorDetails;
 
   @override
   void dispose() {
@@ -27,16 +27,10 @@ class _TokenPageState extends State<TokenPage> {
   }
 
   void _onAccess() {
-    final token = _controller.text.trim().toUpperCase(); // Convertir a mayúsculas
+    final token = _controller.text.trim().toUpperCase();
 
     if (token.isEmpty) {
       _showSnackBar('Introduce un token válido');
-      return;
-    }
-
-    // Validación básica de formato (ajusta según tu backend)
-    if (token.length < 4) {
-      _showSnackBar('El token debe tener al menos 4 caracteres');
       return;
     }
 
@@ -45,30 +39,7 @@ class _TokenPageState extends State<TokenPage> {
       _errorDetails = null;
     });
 
-    // Primero intentamos validar con el endpoint específico
     _tokenService.validateToken(token).then((isValid) {
-      if (!mounted) return;
-      
-      if (isValid) {
-        // Token válido - navegar
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => StudentHomePage(token: token),
-          ),
-        );
-      } else {
-        // Si falla, intentamos con el endpoint de conversaciones como respaldo
-        _tryAlternativeValidation(token);
-      }
-    }).catchError((e) {
-      if (!mounted) return;
-      _tryAlternativeValidation(token);
-    });
-  }
-
-  void _tryAlternativeValidation(String token) {
-    _tokenService.testTokenWithConversation(token).then((isValid) {
       if (!mounted) return;
       
       if (isValid) {
@@ -91,7 +62,7 @@ class _TokenPageState extends State<TokenPage> {
         _isValidating = false;
         _errorDetails = 'Error de conexión con el servidor';
       });
-      _showSnackBar('Error de conexión. Verifica que el backend esté corriendo en http://localhost:8080');
+      _showSnackBar('Error de conexión. Verifica que el backend esté corriendo');
     });
   }
 
