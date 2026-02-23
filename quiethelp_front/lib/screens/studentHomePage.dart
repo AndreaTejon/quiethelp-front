@@ -1,0 +1,474 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../constants/app_theme.dart';
+import '../widgets/custom_dropdown.dart';
+import '../widgets/custom_text_field.dart';
+import '../widgets/topic_tile.dart';
+import '../widgets/security_badge.dart';
+import '../widgets/footer.dart';
+import '../widgets/menu_popup.dart';
+import '../constants/app_data.dart';
+
+import 'messageSent.dart';
+import 'chatHistoryStudent.dart';
+import 'signIn.dart';
+import 'aboutUs.dart';
+
+class StudentHomePage extends StatefulWidget {
+  final String? token; // Token recibido desde TokenPage
+  
+  const StudentHomePage({super.key, this.token});
+
+  @override
+  State<StudentHomePage> createState() => _StudentHomePageState();
+}
+
+class _StudentHomePageState extends State<StudentHomePage> {
+  final msgCtrl = TextEditingController();
+  final groupCtrl = TextEditingController();
+  String? curso, topic;
+  bool _sending = false;
+
+  static const String _baseUrl = 'http://localhost:8080';
+
+  bool get _isValid => topic != null && msgCtrl.text.trim().isNotEmpty;
+
+  String _mapTarjeta(String t) {
+    switch (t) {
+      case 'bullying':
+        return 'Bullying';
+      case 'academica':
+        return 'Académico';
+      case 'emociones':
+        return 'Emocional';
+      default:
+        return 'Otro';
+    }
+  }
+
+  Future<void> _send() async {
+    // Validar que tenemos token
+    if (widget.token == null) {
+      _showSnackBar('Sesión no válida');
+      _logout();
+      return;
+    }
+
+    if (topic == null) {
+      _showSnackBar('Elige una tarjeta');
+      return;
+    }
+
+    final msg = msgCtrl.text.trim();
+    if (msg.isEmpty) {
+      _showSnackBar('Escribe tu mensaje antes de enviar');
+      return;
+    }
+
+    if (_sending) return;
+    setState(() => _sending = true);
+
+    final url = Uri.parse('$_baseUrl/api/conversaciones');
+
+    final body = {
+      "token": widget.token, // Usar el token recibido
+      "emisor": {
+        "tarjeta": _mapTarjeta(topic!),
+        "curso": curso,
+        "grupo": groupCtrl.text.trim().isEmpty ? null : groupCtrl.text.trim(),
+      },
+      "conversacion": {
+        "mensajes": [
+          {
+            "emisor": "alumno",
+            "mensaje": msg,
+          }
+        ]
+      }
+    };
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(body),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 201) {
+        msgCtrl.clear();
+        groupCtrl.clear();
+        setState(() {
+          curso = null;
+          topic = null;
+        });
+        
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MessageSent()),
+        );
+      } else if (response.statusCode == 401) {
+        _showSnackBar('Token inválido o expirado');
+        _logout();
+      } else {
+        String errorMsg = 'Error al enviar (${response.statusCode})';
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map) {
+            if (decoded["error"] != null) {
+              errorMsg = decoded["error"].toString();
+            } else if (decoded["mensaje"] != null) {
+              errorMsg = decoded["mensaje"].toString();
+            } else if (decoded["errores"] != null) {
+              final errs = decoded["errores"];
+              if (errs is List && errs.isNotEmpty) {
+                errorMsg = errs.join('\n');
+              }
+            }
+          }
+        } catch (_) {}
+        _showSnackBar(errorMsg);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showSnackBar('No se pudo conectar con el servidor');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _push(Widget page) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+
+  void _logout() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const SignInPage()),
+      (_) => false,
+    );
+  }
+
+  void _notifications() => _push(const ChatHistoryStudent());
+  void _about() => _push(const AboutUs());
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+
+    return Scaffold(
+      backgroundColor: AppColors.bgSoft,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        leadingWidth: 56,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: MenuPopup(
+            onLogout: _logout,
+            onAbout: _about,
+          ),
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/images/quiethelp_logo.png', height: 28),
+            const SizedBox(width: 8),
+            const Text(
+              'QuietHelp',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: 56,
+            child: IconButton(
+              onPressed: _notifications,
+              icon: const Icon(Icons.notifications_none_outlined),
+            ),
+          ),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final pad = constraints.maxWidth >= 900 ? 64.0 : 22.0;
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(pad, 14, pad, 18),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: Column(
+                  children: [
+                    _buildMessageCard(),
+                    const SizedBox(height: 18),
+                    _buildSecurityCard(),
+                    const SizedBox(height: 18),
+                    AppFooter(onAbout: _about),
+                    SizedBox(height: w < 380 ? 18 : 26),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMessageCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)), // CORREGIDO
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04), // CORREGIDO
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(),
+          const SizedBox(height: 14),
+          const SecurityBadge(),
+          const SizedBox(height: 40),
+          _buildLabel('Información adicional (opcional)'),
+          const SizedBox(height: 12),
+          _buildCourseGroupRow(),
+          const SizedBox(height: 40),
+          _buildLabel('¿Sobre qué necesitas ayuda?', required: true),
+          const SizedBox(height: 14),
+          _buildTopicsGrid(),
+          const SizedBox(height: 40),
+          _buildLabel('Tu mensaje', required: true),
+          const SizedBox(height: 14),
+          CustomTextField(
+            hint: 'Cuéntanos lo que te preocupa. Estamos aquí para ayudarte.',
+            controller: msgCtrl,
+            isMultiline: true,
+            minLines: 6,
+            maxLines: 8,
+          ),
+          const SizedBox(height: 40),
+          _buildSendButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() => Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: const BoxDecoration(
+              color: Colors.black,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.chat_bubble_outline,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Envía tu mensaje',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Nadie sabrá que eres tú',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+  Widget _buildLabel(String text, {bool required = false}) => Row(
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: Colors.black.withValues(alpha: 0.75), // CORREGIDO
+            ),
+          ),
+          if (required) ...[
+            const SizedBox(width: 4),
+            const Text(
+              '*',
+              style: TextStyle(
+                color: AppColors.errorRed,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ],
+      );
+
+  Widget _buildCourseGroupRow() => Row(
+        children: [
+          Expanded(
+            child: CustomDropdown(
+              hint: 'Curso',
+              value: curso,
+              items: AppData.courses,
+              onChanged: (v) => setState(() => curso = v),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: CustomTextField(
+              hint: 'Grupo',
+              controller: groupCtrl,
+              maxLength: 40,
+            ),
+          ),
+        ],
+      );
+
+  Widget _buildTopicsGrid() => LayoutBuilder(
+        builder: (context, constraints) {
+          final w = (constraints.maxWidth - 10) / 2;
+          return Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              TopicTile(
+                width: w,
+                height: 64,
+                selected: topic == 'bullying',
+                icon: Icons.shield_outlined,
+                label: 'Bullying',
+                onTap: () => setState(() => topic = 'bullying'),
+              ),
+              TopicTile(
+                width: w,
+                height: 64,
+                selected: topic == 'academica',
+                icon: Icons.school_outlined,
+                label: 'Dificultad académica',
+                onTap: () => setState(() => topic = 'academica'),
+              ),
+              TopicTile(
+                width: w,
+                height: 64,
+                selected: topic == 'emociones',
+                icon: Icons.favorite_border,
+                label: 'Problemas emocionales',
+                onTap: () => setState(() => topic = 'emociones'),
+              ),
+              TopicTile(
+                width: w,
+                height: 64,
+                selected: topic == 'otro',
+                icon: Icons.more_horiz,
+                label: 'Otro',
+                onTap: () => setState(() => topic = 'otro'),
+              ),
+            ],
+          );
+        },
+      );
+
+  Widget _buildSendButton() => SizedBox(
+        width: double.infinity,
+        height: 52,
+        child: ElevatedButton.icon(
+          onPressed: _isValid ? _send : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _isValid 
+                ? AppColors.teal 
+                : AppColors.teal.withValues(alpha: 0.45), // CORREGIDO
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          icon: _sending
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.send_rounded, size: 18),
+          label: Text(
+            _sending ? 'Enviando...' : 'Enviar mensaje anónimo',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      );
+
+  Widget _buildSecurityCard() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        decoration: BoxDecoration(
+          color: AppColors.tealSoft,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.05)), // CORREGIDO
+        ),
+        child: Column(
+          children: const [
+            Icon(
+              Icons.verified_user_outlined,
+              size: 26,
+              color: AppColors.teal,
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Tu seguridad es nuestra prioridad',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'QuietHelp fue creado para que puedas pedir ayuda sin miedo.\n'
+              'Cada mensaje es tratado con el máximo cuidado y confidencialidad por\n'
+              'profesionales capacitados.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+                color: Colors.black45,
+              ),
+            ),
+          ],
+        ),
+      );
+}
