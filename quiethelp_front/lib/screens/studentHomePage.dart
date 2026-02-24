@@ -32,7 +32,8 @@ class _StudentHomePageState extends State<StudentHomePage> {
   String? curso, topic;
   bool _sending = false;
 
-  static const String _baseUrl = 'http://localhost:8080';
+//  static const String _baseUrl = 'http://localhost:8080'; 
+  static const String _baseUrl = 'http://10.0.2.2:8080'; 
 
   @override
 void initState() {
@@ -40,7 +41,7 @@ void initState() {
   // IMPORTANTE: Escuchar cambios en el mensaje para actualizar el botón
   msgCtrl.addListener(_onMessageChanged);
   
-  // 👇 VALIDAR EL TOKEN CUANDO SE ABRE LA PANTALLA
+  // VALIDAR EL TOKEN CUANDO SE ABRE LA PANTALLA
   WidgetsBinding.instance.addPostFrameCallback((_) {
     _validarTokenAlIniciar();
   });
@@ -55,7 +56,7 @@ void _validarTokenAlIniciar() async {
   _tokenValidado = true;
   
   await Future.delayed(const Duration(milliseconds: 500)); //Retraso para evitar doble llamada
-  // 👇 ESTO USA EL MISMO TokenService
+  // ESTO USA EL MISMO TokenService
   final tokenService = TokenService();
   final esValido = await tokenService.validateToken(widget.token!);
   
@@ -246,7 +247,7 @@ void _validarTokenAlIniciar() async {
       Navigator.push(context, MaterialPageRoute(builder: (_) => page));
 
   void _logout() async{
-    await TokenStorage.clearToken(); // ELiminar el token del móvil
+    await TokenStorage.clearToken(); // Eliminar el token del móvil
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const SignInPage()),

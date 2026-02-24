@@ -29,8 +29,8 @@
         title: 'QuietHelp',
         debugShowCheckedModeBanner: false,
         home: initialToken != null 
-          ? StudentHomePage(token: initialToken)  // 👈 Token existe, va directo a Home
-          : const LoadingPage(),                  // 👈 No hay token, va a Loading (que irá a Login)
+          ? StudentHomePage(token: initialToken)  // Token existe, va directo a Home
+          : const LoadingPage(),                  // No hay token, va a Loading (que irá a Login)
       );
     }
   }
