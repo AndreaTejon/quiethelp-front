@@ -1,10 +1,16 @@
   import 'package:flutter/material.dart';
+  import 'package:supabase_flutter/supabase_flutter.dart';  
   import 'screens/loading.dart';
   import 'services/token_storage.dart'; //Para verificar si existe token
   import 'screens/studentHomePage.dart';
-
   void main() async{
     WidgetsFlutterBinding.ensureInitialized(); //para SharedPreferences
+    // 🔵 NUEVO: Inicializar Supabase
+    await Supabase.initialize(
+      url: 'https://losnmfekwxbvcaldnzij.supabase.co',
+      anonKey: 'sb_publishable_TPYtlAj_ZgLdCwUyzcmdqw_vM_EgQ94',
+    );
+
       // Verificar si hay token guardado
     final hasToken = await TokenStorage.hasToken();
     String? token;

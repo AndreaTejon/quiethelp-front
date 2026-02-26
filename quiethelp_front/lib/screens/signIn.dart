@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 👈 NUEVO
 import 'professorHomePage.dart';
 import 'homePage.dart';
 
@@ -15,6 +16,7 @@ class _SignInPageState extends State<SignInPage> {
   final TextEditingController _userCtrl = TextEditingController();
   final TextEditingController _passCtrl = TextEditingController();
   bool _obscure = true;
+  bool _isLoading = false; // 👈 NUEVO: para controlar estado de carga
 
   @override
   void dispose() {
@@ -23,20 +25,86 @@ class _SignInPageState extends State<SignInPage> {
     super.dispose();
   }
 
-  void _onLogin() {
-    final user = _userCtrl.text.trim();
-    final pass = _passCtrl.text.trim();
+  // 🟢 NUEVO: Función de login con Supabase
+  Future<void> _onLogin() async {
+    final email = _userCtrl.text.trim();
+    final password = _passCtrl.text.trim();
 
-    if (user.isEmpty || pass.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Completa usuario y contraseña')),
-      );
+    // Validaciones básicas
+    if (email.isEmpty || password.isEmpty) {
+      _mostrarError('Completa email y contraseña');
       return;
     }
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const ProfessorHomePage()),
+    // Validar que tenga formato de email (opcional pero recomendado)
+    if (!email.contains('@')) {
+      _mostrarError('Introduce un email válido');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // 1️⃣ Llamar a Supabase Auth
+      final response = await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      // 2️⃣ Obtener datos del usuario
+      final user = response.user;
+      
+      if (user == null) {
+        throw Exception('No se pudo obtener el usuario');
+      }
+
+      // 3️⃣ Preparar datos del profesor
+      final profesorData = {
+        'id': user.id,                                // UUID para revisorId
+        'email': user.email,
+        'nombre': user.email!.split('@').first,       // "profesor" del email
+        'metadata': user.userMetadata,                 // Si hay más datos
+      };
+
+      print('✅ Login exitoso:');
+      print('   - ID: ${profesorData['id']}');
+      print('   - Email: ${profesorData['email']}');
+      print('   - Nombre: ${profesorData['nombre']}');
+
+      // 4️⃣ Navegar a ProfessorHomePage con los datos
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProfessorHomePage(profesorData: profesorData),
+          ),
+        );
+      }
+
+    } on AuthException catch (e) {
+      // Error específico de autenticación
+      print('❌ AuthException: ${e.message}');
+      _mostrarError('Email o contraseña incorrectos');
+      
+    } catch (e) {
+      // Otros errores (red, etc.)
+      print('❌ Error: $e');
+      _mostrarError('Error de conexión. Intenta de nuevo');
+      
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // Función auxiliar para mostrar errores
+  void _mostrarError(String mensaje) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: Colors.red,
+      ),
     );
   }
 
@@ -44,8 +112,6 @@ class _SignInPageState extends State<SignInPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-
-      // flechita arriba para volver atrás
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
@@ -61,7 +127,6 @@ class _SignInPageState extends State<SignInPage> {
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
         ),
       ),
-
       body: SafeArea(
         top: false,
         child: LayoutBuilder(
@@ -77,11 +142,8 @@ class _SignInPageState extends State<SignInPage> {
                   child: Column(
                     children: [
                       const SizedBox(height: 18),
-
                       const _TopIcon(),
-
                       const SizedBox(height: 22),
-
                       const Text(
                         'Acceso Comité',
                         textAlign: TextAlign.center,
@@ -92,9 +154,7 @@ class _SignInPageState extends State<SignInPage> {
                           color: Colors.black,
                         ),
                       ),
-
                       const SizedBox(height: 10),
-
                       Text(
                         'Inicia sesión para acceder al panel',
                         textAlign: TextAlign.center,
@@ -105,13 +165,13 @@ class _SignInPageState extends State<SignInPage> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-
                       const SizedBox(height: 30),
 
+                      // Email
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Usuario',
+                          'Email', // 👈 Cambié "Usuario" por "Email"
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
@@ -119,20 +179,20 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 10),
-
                       TextField(
                         controller: _userCtrl,
                         textInputAction: TextInputAction.next,
+                        keyboardType: TextInputType.emailAddress,
+                        enabled: !_isLoading, // 👈 Deshabilitar mientras carga
                         decoration: InputDecoration(
-                          hintText: 'Introduce tu usuario',
+                          hintText: 'profesor@instituto.com',
                           hintStyle: TextStyle(
                             color: Colors.black.withOpacity(0.25),
                             fontWeight: FontWeight.w600,
                           ),
                           prefixIcon: Icon(
-                            Icons.person_outline,
+                            Icons.email_outlined,
                             color: Colors.black.withOpacity(0.35),
                           ),
                           filled: true,
@@ -159,6 +219,7 @@ class _SignInPageState extends State<SignInPage> {
 
                       const SizedBox(height: 16),
 
+                      // Contraseña
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
@@ -170,16 +231,15 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 10),
-
                       TextField(
                         controller: _passCtrl,
                         obscureText: _obscure,
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) => _onLogin(),
+                        enabled: !_isLoading, // 👈 Deshabilitar mientras carga
                         decoration: InputDecoration(
-                          hintText: 'Introduce tu contraseña',
+                          hintText: '••••••••',
                           hintStyle: TextStyle(
                             color: Colors.black.withOpacity(0.25),
                             fontWeight: FontWeight.w600,
@@ -189,7 +249,7 @@ class _SignInPageState extends State<SignInPage> {
                             color: Colors.black.withOpacity(0.35),
                           ),
                           suffixIcon: IconButton(
-                            onPressed: () =>
+                            onPressed: _isLoading ? null : () => // 👈 No permitir mientras carga
                                 setState(() => _obscure = !_obscure),
                             icon: Icon(
                               _obscure
@@ -222,11 +282,12 @@ class _SignInPageState extends State<SignInPage> {
 
                       const SizedBox(height: 26),
 
+                      // Botón de login
                       SizedBox(
                         width: double.infinity,
                         height: 62,
                         child: ElevatedButton(
-                          onPressed: _onLogin,
+                          onPressed: _isLoading ? null : _onLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: teal,
                             foregroundColor: Colors.white,
@@ -235,13 +296,22 @@ class _SignInPageState extends State<SignInPage> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: const Text(
-                            'Iniciar sesión',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const SizedBox(  // Mostrar loader mientras carga
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Iniciar sesión',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                         ),
                       ),
 

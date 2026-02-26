@@ -8,8 +8,15 @@ class TokenService {
   
   Future<bool> validateToken(String token) async {
     if(_isValidando) {
-      print(('Ya hay una validación en curso'));
-      return true; //Se asume correcta
+      print('⏳ Validación en curso, esperando...');
+      for(int i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        if(!_isValidando) break;
+      }
+      if(_isValidando) {
+        print('❌ Timeout: validación previa no completada');
+        return false; // No asumir éxito
+      }
     }
     _isValidando = true;
     print('🔍 Validando token: $token');
@@ -20,9 +27,7 @@ class TokenService {
       
       final body = {
         "token": token,
-        "emisor": {
-          "tarjeta": "Otro",
-        },
+        "emisor": {"tarjeta": "Otro",},
         "conversacion": {
           "mensajes": [
             {
@@ -57,7 +62,9 @@ class TokenService {
       
     } catch (e) {
       print('❌ Error de conexión: $e');
-      return false;
+      return false; // Error de conexión = token NO válido
+    } finally {
+      _isValidando = false;
     }
   }
 }

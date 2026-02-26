@@ -9,10 +9,13 @@ import '../widgets/menu_popup.dart';
 import 'chatProfessorInitial.dart';
 import 'signIn.dart';
 import 'aboutUs.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 
 class ProfessorHomePage extends StatefulWidget {
-  const ProfessorHomePage({super.key});
+  final Map<String, dynamic> profesorData; //Datos
+  
+  const ProfessorHomePage({super.key, required this.profesorData});
 
   @override
   State<ProfessorHomePage> createState() => _ProfessorHomePageState();
@@ -22,16 +25,38 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
   String _category = 'Todos';
   int _tabIndex = 0;
 
+    @override
+  void initState() {
+    super.initState();
+    // Mostrar quién ha iniciado sesión (para debug)
+    print('Profesor logueado: ${widget.profesorData['nombre']}');
+    print('ID: ${widget.profesorData['id']}');
+  }
+
   void _openNotifications() {
     // Aquí puedes navegar a notificaciones
   }
 
-  void _logout() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const SignInPage()),
-      (route) => false,
-    );
+  void _logout() async {
+    // 1. Cerrar sesión en Supabase
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (e) {
+      print('❌ Error al cerrar sesión en Supabase: $e');
+    }
+    
+    // 2. Mensaje de confirmación
+    print('Sesión cerrada correctamente');
+    
+    // 3. Volver a la pantalla de login
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const SignInPage()),
+        (route) => false,  // Elimina todas las rutas anteriores
+      );
+    }
+    
   }
 
   void _goToAboutUs() {
@@ -101,9 +126,12 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
       elevation: 0,
       centerTitle: true,
       leadingWidth: 56,
-      leading: const Padding(
+      leading: Padding(
         padding: EdgeInsets.only(left: 8),
-        child: MenuPopup(), // Tu widget existente
+        child: MenuPopup(
+          onLogout: _logout, 
+          onAbout: _goToAboutUs,
+        ), // Tu widget existente
       ),
       title: Row(
         mainAxisSize: MainAxisSize.min,
