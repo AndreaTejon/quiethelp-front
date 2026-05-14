@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/message_model.dart';
 
 class MessageService {
-  static const String _baseUrl = 'http://localhost:8080';
+  static const String _baseUrl = 'http://10.0.2.2:8080';
 
   static Future<http.Response> sendMessage(MessageRequest request) async {
     return await http.post(

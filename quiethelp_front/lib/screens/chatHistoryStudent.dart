@@ -1,6 +1,10 @@
 // chatHistoryStudent.dart
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'chatPageStudent.dart';
+import 'dart:convert';
+import '../models/conversacion_response.dart';
+import '../services/token_storage.dart';
 
 class ChatHistoryStudent extends StatelessWidget {
   const ChatHistoryStudent({super.key});

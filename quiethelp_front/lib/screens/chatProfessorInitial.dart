@@ -1,22 +1,38 @@
 // chatProfessorInitial.dart
+// Pantalla de detalle de conversación para el profesor
+// Muestra el historial completo de mensajes y permite responder
+// Incluye lógica de asignación y cambio de estados
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../models/conversacion_response.dart';  // Modelo para recibir conversaciones
+import '../models/message_response.dart';       // Modelo para recibir mensajes
 
 class ChatProfessorInitialPage extends StatefulWidget {
-  final String category;
-  final String status; // "Pendiente" | "En revisión" | "Resuelto"
-  final String dateText; // "15 ene 2024, 10:30"
-  final String schoolText; // "IES Ramiro de Maeztu (28001)"
-  final String groupText; // "2º ESO B"
-  final String message;
+  final int conversacionId;           // ID de la conversación (para llamadas API)
+  final String category;               // Categoría: Bullying, Académico, Emocional
+  final String status;                 // "Pendiente" | "En revisión" | "Resuelto"
+  final String dateText;               // "15 ene 2024, 10:30"
+  final String schoolText;             // "IES Ramiro de Maeztu (28001)"
+  final String groupText;               // "2º ESO B" (combinación de curso + grupo)
+  final String message;                 // Primer mensaje (para la tarjeta)
+  final bool urgente;                   // Si la conversación es urgente
+  final String revisorId;               // ID del profesor logueado (desde Supabase)
+  final String revisorNombre;           // Nombre del profesor logueado
 
   const ChatProfessorInitialPage({
     super.key,
+    required this.conversacionId,
     required this.category,
     this.status = 'Pendiente',
     required this.dateText,
     required this.schoolText,
     required this.groupText,
     required this.message,
+    this.urgente = false,
+    required this.revisorId,
+    required this.revisorNombre,
   });
 
   @override
@@ -24,61 +40,529 @@ class ChatProfessorInitialPage extends StatefulWidget {
 }
 
 class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
+  // 📦 VARIABLES DE ESTADO
+  List<MessageResponse> _mensajes = [];           // Lista de mensajes reales
+  bool _isLoading = true;                          // Control de carga
+  String? _error;                                   // Mensaje de error
+  final TextEditingController _respuestaController = TextEditingController(); // Control del input
+  late String _status;                              // Estado actual de la conversación
+  
+  // 🎨 CONSTANTES DE COLOR
   static const teal = Color(0xFF2CB9B2);
   static const bgSoft = Color(0xFFEFF7F6);
-
-  // En la captura el botón seleccionado se ve más "azul" que el teal del logo
   static const selectedBlue = Color(0xFF0C6F8A);
+  static const urgentRed = Color(0xFFD32F2F);       // Color para urgente
 
-  late String _status;
-
+  // 🚀 INICIALIZACIÓN
   @override
   void initState() {
     super.initState();
-    _status = widget.status;
+    _status = widget.status;                         // Estado inicial desde widget
+    _cargarConversacionCompleta();                    // Cargar mensajes reales
+    print('🔵 Chat iniciado - ID: ${widget.conversacionId}');
   }
 
+  @override
+  void dispose() {
+    _respuestaController.dispose();                   // Limpiar controlador
+    super.dispose();
+  }
+
+  // 📡 CARGAR CONVERSACIÓN COMPLETA DESDE SPRINGBOOT
+  // GET /api/conversaciones/{id}
+  Future<void> _cargarConversacionCompleta() async {
+    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}';
+    print('📡 Cargando conversación: $url');
+    
+    try {
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final conversacion = ConversacionResponse.fromJson(json);
+        
+        setState(() {
+          _mensajes = conversacion.mensajes;
+          _isLoading = false;
+        });
+        
+        // Actualizar el estado si viene del backend
+        if (conversacion.estado != null) {
+          setState(() {
+            _status = _mapEstado(conversacion.estado!);
+          });
+        }
+        
+        print('✅ Conversación cargada: ${_mensajes.length} mensajes');
+      } else {
+        setState(() {
+          _error = 'Error al cargar la conversación (${response.statusCode})';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error de conexión: $e');
+      setState(() {
+        _error = 'Error de conexión: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  // 🔄 CONVERTIR ESTADO DEL BACKEND AL FORMATO DE LA UI
+  String _mapEstado(String estado) {
+    switch (estado) {
+      case 'PENDIENTE': return 'Pendiente';
+      case 'EN_REVISION': return 'En revisión';
+      case 'RESUELTO': return 'Resuelto';
+      default: return 'Pendiente';
+    }
+  }
+
+  // 📤 ASIGNAR CONVERSACIÓN AL PROFESOR (PATCH)
+  // Solo se llama cuando está PENDIENTE y se quiere pasar a EN_REVISION
+  Future<void> _asignarYRevisar() async {
+    // Mostrar carga
+    setState(() {
+      _isLoading = true;
+    });
+
+    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}/asignar';
+    final fullUrl = '$url?revisorId=${widget.revisorId}&revisorNombre=${Uri.encodeComponent(widget.revisorNombre)}';
+    
+    try {
+      print('📤 Asignando conversación a: ${widget.revisorNombre}');
+      
+      final response = await http.patch(
+        Uri.parse(fullUrl),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('📥 Status code: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        // ✅ Éxito: actualizar estado local
+        setState(() {
+          _status = 'En revisión';
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Conversación asignada correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Recargar conversación para obtener datos actualizados
+        await _cargarConversacionCompleta();
+        
+      } else {
+        throw Exception('Error al asignar: ${response.body}');
+      }
+    } catch (e) {
+      print('❌ Error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al asignar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // 📤 CAMBIAR ESTADO (solo para EN_REVISION → RESUELTO)
+  Future<void> _marcarResuelto() async {
+    // Mostrar carga
+    setState(() {
+      _isLoading = true;
+    });
+
+    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}/estado?nuevoEstado=RESUELTO';
+    
+    try {
+      print('📤 Marcando como resuelto');
+      
+      final response = await http.patch(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+      );
+      
+      print('📥 Status code: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        // ✅ Éxito: actualizar estado local
+        setState(() {
+          _status = 'Resuelto';
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Conversación marcada como resuelta'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+      } else {
+        throw Exception('Error al marcar resuelto: ${response.body}');
+      }
+    } catch (e) {
+      print('❌ Error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al marcar resuelto: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // 📤 ENVIAR RESPUESTA DEL PROFESOR
+  // POST /api/conversaciones/{id}/responder
+  Future<void> _enviarRespuesta() async {
+    final contenido = _respuestaController.text.trim();
+    
+    // Validar que no esté vacío
+    if (contenido.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Escribe un mensaje'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Validar que la conversación esté en revisión (solo se puede responder si está asignada)
+    if (!_isReview) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solo puedes responder conversaciones en revisión'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Mostrar indicador de carga
+    setState(() {
+      _isLoading = true;
+    });
+
+    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}/responder';
+    
+    try {
+      print('📤 Enviando respuesta...');
+      
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contenido': contenido,
+          'revisorId': widget.revisorId,
+          'revisorNombre': widget.revisorNombre,
+        }),
+      );
+      
+      print('📥 Status code: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        // ✅ Éxito: limpiar campo y recargar mensajes
+        _respuestaController.clear();
+        await _cargarConversacionCompleta();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Respuesta enviada'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        throw Exception('Error al enviar: ${response.body}');
+      }
+    } catch (e) {
+      print('❌ Error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al enviar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // 🎨 WIDGET: AppBar personalizada
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      centerTitle: true,
+      leading: IconButton(
+        onPressed: () => Navigator.maybePop(context),
+        icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+      ),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset('assets/images/quiethelp_logo.png', height: 28),
+          const SizedBox(width: 8),
+          const Text(
+            'QuietHelp',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          onPressed: () {}, 
+          icon: const Icon(Icons.notifications_none_outlined)
+        ),
+        const SizedBox(width: 6),
+      ],
+    );
+  }
+
+  // 💬 WIDGET: Lista de mensajes (historial completo)
+  Widget _buildMensajesList() {
+    if (_mensajes.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Center(
+            child: Text('No hay mensajes en esta conversación'),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _mensajes.length,
+      itemBuilder: (context, index) {
+        final msg = _mensajes[index];
+        final esProfesor = msg.emisor == 'profesor';
+        
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  esProfesor ? '👨‍🏫 Profesor' : '👤 Alumno',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: esProfesor ? teal : Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(msg.mensaje),
+                const SizedBox(height: 4),
+                Text(
+                  msg.fecha,
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 📝 WIDGET: Área de respuesta (input + botón)
+  Widget _buildRespuestaArea() {
+    // Si está resuelto, no se puede responder
+    if (_isSolved) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Center(
+            child: Text(
+              '✅ Conversación resuelta',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Si está pendiente, no se puede responder (hay que asignar primero)
+    if (_isPending) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Center(
+            child: Text(
+              '📌 Asigna la conversación para poder responder',
+              style: TextStyle(color: Colors.orange),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Solo se muestra si está en revisión
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 🚨 Etiqueta de URGENTE (si aplica)
+            if (widget.urgente) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: urgentRed.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: urgentRed.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 16, color: urgentRed),
+                    const SizedBox(width: 6),
+                    Text(
+                      'URGENTE',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: urgentRed,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            
+            // Campo de texto para la respuesta
+            const Text(
+              'Escribe tu respuesta:',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _respuestaController,
+              decoration: InputDecoration(
+                hintText: 'Mensaje del profesor...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.all(12),
+              ),
+              maxLines: 4,
+              minLines: 2,
+              enabled: !_isLoading,
+            ),
+            const SizedBox(height: 12),
+            
+            // Botón de enviar
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _enviarRespuesta,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: teal,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Enviar mensaje',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🔄 GETTERS PARA ESTADOS
   bool get _isPending => _status == 'Pendiente';
   bool get _isReview => _status == 'En revisión';
   bool get _isSolved => _status == 'Resuelto';
 
+  // 🏗️ CONSTRUCCIÓN DE LA PANTALLA
   @override
   Widget build(BuildContext context) {
+    // 📍 Manejo de estados de carga y error
+    if (_isLoading && _mensajes.isEmpty) {
+      return Scaffold(
+        backgroundColor: bgSoft,
+        appBar: _buildAppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: bgSoft,
+        appBar: _buildAppBar(),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _isLoading = true;
+                    _error = null;
+                  });
+                  _cargarConversacionCompleta();
+                },
+                child: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 📱 Pantalla principal
     return Scaffold(
       backgroundColor: bgSoft,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        
-        leading: IconButton(
-          onPressed: () => Navigator.maybePop(context),
-          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-        ),
-        
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset('assets/images/quiethelp_logo.png', height: 28),
-            const SizedBox(width: 8),
-            const Text(
-              'QuietHelp',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-        
-        actions: [
-          // ❌ ELIMINADO: Icono de grid_view_rounded
-          IconButton(
-            onPressed: () {}, 
-            icon: const Icon(Icons.notifications_none_outlined)
-          ),
-          const SizedBox(width: 6),
-        ],
-      ),
-      
+      appBar: _buildAppBar(),
       body: LayoutBuilder(builder: (context, constraints) {
         final pad = constraints.maxWidth >= 900 ? 64.0 : 22.0;
         
@@ -90,6 +574,7 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // 🃏 Tarjeta de detalle con lógica de estados
                   _DetailCard(
                     category: widget.category,
                     status: _status,
@@ -100,40 +585,39 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
                     isPending: _isPending,
                     isReview: _isReview,
                     isSolved: _isSolved,
-                    onStatusTap: (v) => setState(() => _status = v),
-                  ),
-                  
-                  // 🔹 MÁS ESPACIO: Entre tarjeta y botón - AUMENTADO
-                  const SizedBox(height: 35), // Antes 18
-                  
-                  // 🔹 BOTÓN MÁS ESTRECHO: Centrado y con ancho limitado
-                  Center(
-                    child: SizedBox(
-                      width: 700, // Ancho máximo en desktop
-                      child: ElevatedButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Pedir más información (pendiente de implementar)')),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: teal.withOpacity(0.45),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 16), // Más padding vertical
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                    onStatusTap: (nuevoEstado) async {
+                      // REGLAS DE NEGOCIO:
+                      // - Pendiente → En revisión: ASIGNAR
+                      // - En revisión → Resuelto: RESOLVER
+                      // - Cualquier otra combinación: NO PERMITIDA
+                      
+                      if (_isPending && nuevoEstado == 'En revisión') {
+                        await _asignarYRevisar();
+                      }
+                      else if (_isReview && nuevoEstado == 'Resuelto') {
+                        await _marcarResuelto();
+                      }
+                      else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('No se puede cambiar de $_status a $nuevoEstado'),
+                            backgroundColor: Colors.orange,
                           ),
-                        ),
-                        child: const Text(
-                          'Pedir más información',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ),
+                        );
+                      }
+                    },
                   ),
                   
-                  // 🔹 ESPACIO EXTRA: Después del botón
+                  const SizedBox(height: 24),
+                  
+                  // 💬 Historial de mensajes
+                  _buildMensajesList(),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // 📝 Área de respuesta
+                  _buildRespuestaArea(),
+                  
                   const SizedBox(height: 16),
                 ],
               ),
@@ -145,6 +629,9 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
   }
 }
 
+// ==================== WIDGETS PRIVADOS ====================
+
+// 🃏 Tarjeta de detalle del alumno
 class _DetailCard extends StatelessWidget {
   final String category;
   final String status;
@@ -152,11 +639,9 @@ class _DetailCard extends StatelessWidget {
   final String schoolText;
   final String groupText;
   final String message;
-
   final bool isPending;
   final bool isReview;
   final bool isSolved;
-
   final ValueChanged<String> onStatusTap;
 
   const _DetailCard({
@@ -194,6 +679,7 @@ class _DetailCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 🏷️ Categoría y estado
           Row(
             children: [
               const Icon(Icons.menu_book_outlined, size: 18),
@@ -208,6 +694,7 @@ class _DetailCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           
+          // 📅 Información contextual
           Wrap(
             spacing: 16,
             runSpacing: 8,
@@ -243,27 +730,29 @@ class _DetailCard extends StatelessWidget {
                   ),
                 ],
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.group_outlined, size: 14, color: Colors.black.withOpacity(0.45)),
-                  const SizedBox(width: 6),
-                  Text(
-                    groupText,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black.withOpacity(0.45),
+              if (groupText.isNotEmpty) // Solo mostrar si hay curso/grupo
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.group_outlined, size: 14, color: Colors.black.withOpacity(0.45)),
+                    const SizedBox(width: 6),
+                    Text(
+                      groupText,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black.withOpacity(0.45),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
           
           const SizedBox(height: 12),
           Divider(color: Colors.black.withOpacity(0.08), height: 1),
 
+          // 💬 Mensaje del alumno
           const SizedBox(height: 14),
           const Text(
             'Mensaje del alumno',
@@ -288,13 +777,11 @@ class _DetailCard extends StatelessWidget {
             ),
           ),
           
-          // 🔹 MÁS ESPACIO: Entre mensaje y divider
-          const SizedBox(height: 24), // Antes 14
-          
+          const SizedBox(height: 24),
           Divider(color: Colors.black.withOpacity(0.08), height: 1),
 
-          // 🔹 MÁS ESPACIO: Entre divider y botones de estado
-          const SizedBox(height: 40), // Antes 16
+          // 🔘 Botones de estado
+          const SizedBox(height: 40),
           
           LayoutBuilder(
             builder: (context, constraints) {
@@ -364,7 +851,6 @@ class _DetailCard extends StatelessWidget {
             },
           ),
           
-          // 🔹 ESPACIO EXTRA: Después de los botones de estado
           const SizedBox(height: 8),
         ],
       ),
@@ -372,6 +858,7 @@ class _DetailCard extends StatelessWidget {
   }
 }
 
+// 🏷️ Píldora de estado (colores según estado)
 class _StatusPill extends StatelessWidget {
   final String status;
   const _StatusPill({required this.status});
@@ -427,6 +914,7 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
+// 🔘 Botón de estado individual
 class _StateButton extends StatelessWidget {
   final String text;
   final IconData icon;

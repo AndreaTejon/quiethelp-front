@@ -6,7 +6,7 @@ class ConversacionResponse {
   final String? estado;
   final String? revisorId;
   final String? revisorNombre;
-  final String? fechaRecibido;
+  final String? fechaInicio;
   final String? fechaAsignacion;
   final String? fechaResolucion;
   final EmisorData emisor;           // datos del alumno
@@ -17,42 +17,44 @@ class ConversacionResponse {
     this.estado,
     this.revisorId,
     this.revisorNombre,
-    this.fechaRecibido,
+    this.fechaInicio,
     this.fechaAsignacion,
     this.fechaResolucion,
     required this.emisor,
     required this.mensajes,
   });
 
-  factory ConversacionResponse.fromJson(Map<String, dynamic> json) {
-    // Datos del emisor
-    final emisorJson = json['emisor'] ?? {};
-    
-    // Mensajes (vienen dentro de conversacion.mensajes)
-    List<MessageResponse> mensajesList = [];
-    if (json['conversacion'] != null && 
-        json['conversacion']['mensajes'] != null) {
-      mensajesList = List<MessageResponse>.from(
-        json['conversacion']['mensajes'].map(
-          (x) => MessageResponse.fromJson(x)
-        )
-      );
-    }
-
-    return ConversacionResponse(
-      id: json['id'] ?? 0,
-      estado: json['estado'],
-      revisorId: json['revisorId'],
-      revisorNombre: json['revisorNombre'],
-      fechaRecibido: json['fechaRecibido'],
-      fechaAsignacion: json['fechaAsignacion'],
-      fechaResolucion: json['fechaResolucion'],
-      emisor: EmisorData.fromJson(emisorJson),
-      mensajes: mensajesList,
+factory ConversacionResponse.fromJson(Map<String, dynamic> json) {
+  print('📥 JSON recibido: $json');
+  
+  // El ID está dentro de conversacion, no al mismo nivel
+  final conversacionJson = json['conversacion'] ?? {};
+  
+  final emisorJson = json['emisor'] ?? {};
+  
+  List<MessageResponse> mensajesList = [];
+  if (conversacionJson['mensajes'] != null) {
+    mensajesList = List<MessageResponse>.from(
+      conversacionJson['mensajes'].map(
+        (x) => MessageResponse.fromJson(x)
+      )
     );
   }
 
-  // Getter útil para saber si tiene mensajes
+  return ConversacionResponse(
+    id: int.tryParse(conversacionJson['id'] ?? '0') ?? 0,  // ← TOMAR EL ID DE CONVERSACION
+    estado: conversacionJson['estado'],                    // ← Estado también está en conversacion
+    revisorId: conversacionJson['revisorId'],
+    revisorNombre: conversacionJson['revisorNombre'],
+    fechaInicio: conversacionJson['fechaInicio'],        // ← En el DTO se llama fechaInicio
+    fechaAsignacion: conversacionJson['fechaAsignacion'],
+    fechaResolucion: conversacionJson['fechaResolucion'],
+    emisor: EmisorData.fromJson(emisorJson),
+    mensajes: mensajesList,
+  );
+}
+
+  // Para saber si tiene mensajes
   bool get tieneMensajes => mensajes.isNotEmpty;
   
   // Getter para el primer mensaje (dashboard)

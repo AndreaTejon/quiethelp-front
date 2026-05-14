@@ -6,10 +6,14 @@ import '../widgets/professor/status_tabs.dart';
 import '../widgets/professor/message_card.dart';
 import '../widgets/footer.dart';
 import '../widgets/menu_popup.dart';
+import '../models/dashboard_resumen.dart';
+import '../models/conversacion_response.dart';
 import 'chatProfessorInitial.dart';
 import 'signIn.dart';
 import 'aboutUs.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 
 class ProfessorHomePage extends StatefulWidget {
@@ -24,6 +28,11 @@ class ProfessorHomePage extends StatefulWidget {
 class _ProfessorHomePageState extends State<ProfessorHomePage> {
   String _category = 'Todos';
   int _tabIndex = 0;
+  List<ConversacionResponse> _conversaciones = [];
+  DashboardResumen? _resumen;
+  bool _isLoading = true;
+  String? _error;
+
 
     @override
   void initState() {
@@ -31,7 +40,89 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     // Mostrar quién ha iniciado sesión (para debug)
     print('Profesor logueado: ${widget.profesorData['nombre']}');
     print('ID: ${widget.profesorData['id']}');
+    _cargarDatos();
   }
+
+  Future<void> _cargarDatos() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try{ //Carga conversaciones y resumen en paralelo
+      await Future.wait([
+        _cargarConversaciones(),
+        _cargarResumen(),
+      ]);
+    } catch (e) {
+      setState(() {
+        _error = 'Error al cargar datos: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _cargarConversaciones() async {
+    final url = 'http://10.0.2.2:8080/api/conversaciones/dashboard';
+    String? estado; //Para mapear el tab
+    if (_tabIndex == 0) estado = 'PENDIENTE';
+    if (_tabIndex == 1) estado = 'EN_REVISION';
+    if (_tabIndex == 2) estado = 'RESUELTO';
+
+    String? tarjeta; //Mapear la categoria si no es todos
+    if (_category != 'Todos') tarjeta = _category;
+
+    var uri = Uri.parse(url).replace(queryParameters: {
+      if (estado != null) 'estado': estado,
+      if (tarjeta != null) 'tarjeta': tarjeta,
+    });
+
+    print('Cargando conversaciones: $uri');
+
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        List<dynamic> jsonList = jsonDecode(response.body);
+        setState(() {
+          _conversaciones = jsonList.map((json) => ConversacionResponse.fromJson(json)).toList();
+        });
+        print('✅ Cargadas ${_conversaciones.length} conversaciones');
+      } else {
+        print('Error ${response.statusCode}: ${response.body}');
+        throw Exception('Error al cargar conversaciones');
+      }
+    } catch (e) {
+      print('Excepción: $e');
+      throw Exception('Error de conexión: $e');      
+    }
+  }
+
+  Future<void> _cargarResumen() async {
+  final url = 'http://10.0.2.2:8080/api/conversaciones/resumen';
+  
+  print('📡 Cargando resumen: $url');
+  
+  try {
+    final response = await http.get(Uri.parse(url));
+    
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      setState(() {
+        _resumen = DashboardResumen.fromJson(json);
+      });
+      print('Resumen cargado: Pendientes: ${_resumen?.pendientes}');
+    } else {
+      print('Error al cargar resumen: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Excepción en resumen: $e');
+  }
+}
+
+  
 
   void _openNotifications() {
     // Aquí puedes navegar a notificaciones
@@ -42,7 +133,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     try {
       await Supabase.instance.client.auth.signOut();
     } catch (e) {
-      print('❌ Error al cerrar sesión en Supabase: $e');
+      print('Error al cerrar sesión en Supabase: $e');
     }
     
     // 2. Mensaje de confirmación
@@ -63,7 +154,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutUs()));
   }
 
-  void _navigateToChat(String category, String date, String message) {
+  /*void _navigateToChat(String category, String date, String message) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -77,7 +168,38 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
         ),
       ),
     );
+  }*/
+ void _navigateToChat(ConversacionResponse conversacion) {
+  final primerMensaje = conversacion.primerMensaje;
+  
+  // Combinar curso y grupo si existen
+  String cursoGrupo = '';
+  if (conversacion.emisor.curso != null && conversacion.emisor.grupo != null) {
+    cursoGrupo = '${conversacion.emisor.curso} ${conversacion.emisor.grupo}';
+  } else if (conversacion.emisor.curso != null) {
+    cursoGrupo = conversacion.emisor.curso!;
+  } else if (conversacion.emisor.grupo != null) {
+    cursoGrupo = 'Grupo: ${conversacion.emisor.grupo}';
   }
+  
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ChatProfessorInitialPage(
+        conversacionId: conversacion.id,
+        category: conversacion.emisor.tarjeta,
+        status: conversacion.estado ?? 'Pendiente',
+        dateText: conversacion.fechaInicio ?? '',
+        schoolText: 'IES Ramiro de Maeztu (28001)',  // Por ahora fijo
+        groupText: cursoGrupo,
+        message: primerMensaje?.mensaje ?? '',
+        urgente: conversacion.emisor.urgente,        // ← Boolean
+        revisorId: widget.profesorData['id'],        // ← Del profesor logueado
+        revisorNombre: widget.profesorData['nombre'], // ← Revisor_nombre
+      ),
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -92,32 +214,90 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1200),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  StatsGrid(onTap: (i) => setState(() => _tabIndex = i)),
-                  const SizedBox(height: 28),
-                  CategoryFilter(
-                    value: _category,
-                    onChanged: (v) => setState(() => _category = v),
-                  ),
-                  const SizedBox(height: 20),
-                  StatusTabs(
-                    index: _tabIndex,
-                    onChanged: (i) => setState(() => _tabIndex = i),
-                  ),
-                  const SizedBox(height: 32),
-                  ..._buildMessageList(),
-                  const SizedBox(height: 48),
-                  AppFooter(onAbout: _goToAboutUs),
-                ],
-              ),
+              child: _buildBody(),  // 👈 Nuevo método
             ),
           ),
         );
       }),
     );
   }
+
+Widget _buildBody() { // Método que maneja los estados de carga
+  if (_isLoading) {
+    return const Center(
+      child: Column(
+        children: [
+          SizedBox(height: 100),
+          CircularProgressIndicator(),
+          SizedBox(height: 20),
+          Text('Cargando conversaciones...'),
+        ],
+      ),
+    );
+  }
+
+  if (_error != null) {
+    return Center(
+      child: Column(
+        children: [
+          const SizedBox(height: 100),
+          Icon(Icons.error_outline, size: 48, color: Colors.red),
+          const SizedBox(height: 20),
+          Text(_error!, textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _cargarDatos,
+            child: const Text('Reintentar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      // StatsGrid con datos REALES
+      StatsGrid(
+        pendientes: _resumen?.pendientes ?? 0,
+        enRevision: _resumen?.enRevision ?? 0,
+        resueltos: _resumen?.resueltos ?? 0,
+        urgentes: _resumen?.urgentes ?? 0,
+        onTap: (i) {
+          setState(() => _tabIndex = i);
+          _cargarConversaciones();  // Recargar con nuevo estado
+        },
+      ),
+      const SizedBox(height: 28),
+      
+      // CategoryFilter (sin cambios)
+      CategoryFilter(
+        value: _category,
+        onChanged: (v) {
+          setState(() => _category = v);
+          _cargarConversaciones();  // Recargar con nueva categoría
+        },
+      ),
+      const SizedBox(height: 20),
+      
+      // StatusTabs (sin cambios)
+      StatusTabs(
+        index: _tabIndex,
+        onChanged: (i) {
+          setState(() => _tabIndex = i);
+          _cargarConversaciones();  // Recargar con nuevo estado
+        },
+      ),
+      const SizedBox(height: 32),
+      
+      // Mensajes REALES
+      ..._buildMessageList(),
+      
+      const SizedBox(height: 48),
+      AppFooter(onAbout: _goToAboutUs),
+    ],
+  );
+}
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
@@ -156,7 +336,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     );
   }
 
-  List<Widget> _buildMessageList() {
+ /* List<Widget> _buildMessageList() {
     final messages = [
       {
         'category': 'Bullying',
@@ -199,5 +379,35 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
         ],
       );
     }).toList();
+  }*/
+  List<Widget> _buildMessageList() {
+  if (_conversaciones.isEmpty) {
+    return [
+      const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Text('No hay conversaciones en esta categoría'),
+        ),
+      )
+    ];
   }
+
+  return _conversaciones.map((conv) {
+    final primerMensaje = conv.primerMensaje;
+    if (primerMensaje == null) return const SizedBox();
+    
+    return Column(
+      children: [
+        MessageCard(
+          category: conv.emisor.tarjeta,
+          urgent: conv.emisor.urgente,
+          body: primerMensaje.mensaje,
+          received: 'Recibido: ${conv.fechaInicio ?? ''}',
+          onReview: () => _navigateToChat(conv),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }).toList();
+}
 }
