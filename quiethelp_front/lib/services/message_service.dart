@@ -1,9 +1,16 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/message_model.dart';
 
 class MessageService {
-  static const String _baseUrl = 'http://10.0.2.2:8080';
+
+  static String get _baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:8080';
+    }
+    return 'http://10.0.2.2:8080';
+  }
 
   static Future<http.Response> sendMessage(MessageRequest request) async {
     return await http.post(
@@ -16,6 +23,7 @@ class MessageService {
   static String extractErrorMessage(http.Response response) {
     try {
       final decoded = jsonDecode(response.body);
+
       if (decoded is Map) {
         if (decoded["message"] != null) {
           return decoded["message"].toString();
@@ -24,6 +32,7 @@ class MessageService {
         }
       }
     } catch (_) {}
+
     return 'Error al enviar (${response.statusCode})';
   }
 }

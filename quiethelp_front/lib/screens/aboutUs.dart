@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../constants/app_theme.dart';
 import '../widgets/app_header.dart';
-import '../widgets/about_info_card.dart';  // 👈 NUEVO IMPORT
+import '../widgets/about_info_card.dart'; // 👈 NUEVO IMPORT
 import '../widgets/value_card.dart';
 import '../widgets/contact_line.dart';
 import 'studentHomePage.dart';
@@ -17,46 +18,52 @@ class AboutUs extends StatelessWidget {
         title: 'Quiénes somos',
         subtitle: 'Conoce al equipo detrás de QuietHelp',
       ),
-      body: LayoutBuilder(builder: (context, constraints) {
-        final padHorizontal = constraints.maxWidth >= 1200 ? 120.0 : 
-                             constraints.maxWidth >= 900 ? 80.0 : 
-                             constraints.maxWidth >= 600 ? 40.0 : 20.0;
-        
-        final maxContentWidth = constraints.maxWidth >= 1200 ? 900.0 : 1200.0;
-        
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(padHorizontal, 24, padHorizontal, 32),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxContentWidth),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 16),
-                  _buildLogo(),
-                  const SizedBox(height: 20),
-                  _buildTitle(),
-                  const SizedBox(height: 16),
-                  _buildDescription(),
-                  const SizedBox(height: 32),
-                  _buildMissionCard(),
-                  const SizedBox(height: 40),
-                  _buildValuesTitle(),
-                  const SizedBox(height: 24),
-                  _buildValuesGrid(),
-                  const SizedBox(height: 40),
-                  _buildHelpCard(),
-                  const SizedBox(height: 40),
-                  _buildActionButton(context),
-                  const SizedBox(height: 48),
-                  _buildFooter(),
-                  const SizedBox(height: 16),
-                ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final padHorizontal = constraints.maxWidth >= 1200
+              ? 120.0
+              : constraints.maxWidth >= 900
+              ? 80.0
+              : constraints.maxWidth >= 600
+              ? 40.0
+              : 20.0;
+
+          final maxContentWidth = constraints.maxWidth >= 1200 ? 900.0 : 1200.0;
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(padHorizontal, 24, padHorizontal, 32),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxContentWidth),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 16),
+                    _buildLogo(),
+                    const SizedBox(height: 20),
+                    _buildTitle(),
+                    const SizedBox(height: 16),
+                    _buildDescription(),
+                    const SizedBox(height: 32),
+                    _buildMissionCard(),
+                    const SizedBox(height: 40),
+                    _buildValuesTitle(),
+                    const SizedBox(height: 24),
+                    _buildValuesGrid(),
+                    const SizedBox(height: 40),
+                    _buildHelpCard(),
+                    const SizedBox(height: 40),
+                    _buildActionButton(context),
+                    const SizedBox(height: 48),
+                    _buildFooter(),
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        },
+      ),
     );
   }
 
@@ -65,8 +72,8 @@ class AboutUs extends StatelessWidget {
       child: SizedBox(
         width: 80,
         height: 80,
-        child: Image.asset(
-          'assets/images/quiethelp_logo.png',
+        child: SvgPicture.asset(
+          'assets/images/quiethelp_logo.svg',
           fit: BoxFit.contain,
         ),
       ),
@@ -75,10 +82,7 @@ class AboutUs extends StatelessWidget {
 
   Widget _buildTitle() {
     return const Center(
-      child: Text(
-        'QuietHelp',
-        style: AppTextStyles.titleLarge,
-      ),
+      child: Text('QuietHelp', style: AppTextStyles.titleLarge),
     );
   }
 
@@ -101,7 +105,8 @@ class AboutUs extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 700),
-        child: AboutInfoCard(  // 👈 AHORA USA AboutInfoCard
+        child: AboutInfoCard(
+          // 👈 AHORA USA AboutInfoCard
           title: 'Nuestra misión',
           child: Text(
             'Crear un canal de comunicación anónimo y seguro donde los estudiantes puedan compartir sus preocupaciones sobre bullying, problemas académicos o situaciones emocionales, garantizando una respuesta profesional y empática.',
@@ -117,10 +122,7 @@ class AboutUs extends StatelessWidget {
 
   Widget _buildValuesTitle() {
     return const Center(
-      child: Text(
-        'Nuestros valores',
-        style: AppTextStyles.titleMedium,
-      ),
+      child: Text('Nuestros valores', style: AppTextStyles.titleMedium),
     );
   }
 
@@ -128,7 +130,7 @@ class AboutUs extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
-        
+
         return GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -139,19 +141,23 @@ class AboutUs extends StatelessWidget {
           children: const [
             ValueCard(
               title: 'Confidencialidad',
-              description: 'Tu identidad está completamente protegida. Nadie sabrá quién eres.',
+              description:
+                  'Tu identidad está completamente protegida. Nadie sabrá quién eres.',
             ),
             ValueCard(
               title: 'Empatía',
-              description: 'Te escuchamos sin juzgar. Tu bienestar es lo primero.',
+              description:
+                  'Te escuchamos sin juzgar. Tu bienestar es lo primero.',
             ),
             ValueCard(
               title: 'Comunidad',
-              description: 'Construimos un entorno más seguro. Juntos es más fácil pedir ayuda.',
+              description:
+                  'Construimos un entorno más seguro. Juntos es más fácil pedir ayuda.',
             ),
             ValueCard(
               title: 'Acción',
-              description: 'Damos seguimiento y apoyo. Tu mensaje impulsa una respuesta real.',
+              description:
+                  'Damos seguimiento y apoyo. Tu mensaje impulsa una respuesta real.',
             ),
           ],
         );
@@ -163,7 +169,8 @@ class AboutUs extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 700),
-        child: AboutInfoCard(  // 👈 AHORA USA AboutInfoCard
+        child: AboutInfoCard(
+          // 👈 AHORA USA AboutInfoCard
           title: '¿Necesitas más ayuda?',
           child: Column(
             children: [
@@ -194,7 +201,9 @@ class AboutUs extends StatelessWidget {
                     color: Colors.black.withOpacity(0.55),
                   ),
                   children: const [
-                    TextSpan(text: 'En caso de emergencia inmediata, llama al '),
+                    TextSpan(
+                      text: 'En caso de emergencia inmediata, llama al ',
+                    ),
                     TextSpan(
                       text: '112.',
                       style: TextStyle(
@@ -247,10 +256,7 @@ class AboutUs extends StatelessWidget {
   Widget _buildFooter() {
     return Column(
       children: [
-        const Text(
-          'QuietHelp',
-          style: AppTextStyles.labelLarge,
-        ),
+        const Text('QuietHelp', style: AppTextStyles.labelLarge),
         const SizedBox(height: 6),
         Text(
           'Un espacio seguro para estudiantes',

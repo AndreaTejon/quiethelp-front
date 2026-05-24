@@ -1,25 +1,29 @@
 // chatProfessorInitial.dart
-// Pantalla de detalle de conversación para el profesor
-// Muestra el historial completo de mensajes y permite responder
-// Incluye lógica de asignación y cambio de estados
 
+// polling: permite actualizar automáticamente el chat cada pocos segundos
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'dart:convert';
-import '../models/conversacion_response.dart';  // Modelo para recibir conversaciones
-import '../models/message_response.dart';       // Modelo para recibir mensajes
+
+import '../models/conversacion_response.dart';
+import '../models/message_response.dart';
 
 class ChatProfessorInitialPage extends StatefulWidget {
-  final int conversacionId;           // ID de la conversación (para llamadas API)
-  final String category;               // Categoría: Bullying, Académico, Emocional
-  final String status;                 // "Pendiente" | "En revisión" | "Resuelto"
-  final String dateText;               // "15 ene 2024, 10:30"
-  final String schoolText;             // "IES Ramiro de Maeztu (28001)"
-  final String groupText;               // "2º ESO B" (combinación de curso + grupo)
-  final String message;                 // Primer mensaje (para la tarjeta)
-  final bool urgente;                   // Si la conversación es urgente
-  final String revisorId;               // ID del profesor logueado (desde Supabase)
-  final String revisorNombre;           // Nombre del profesor logueado
+  final int conversacionId;
+  final String category;
+  final String status;
+  final String dateText;
+  final String schoolText;
+  final String groupText;
+  final String message;
+  final bool urgente;
+  final String revisorId;
+  final String revisorNombre;
 
   const ChatProfessorInitialPage({
     super.key,
@@ -36,131 +40,254 @@ class ChatProfessorInitialPage extends StatefulWidget {
   });
 
   @override
-  State<ChatProfessorInitialPage> createState() => _ChatProfessorInitialPageState();
+  State<ChatProfessorInitialPage> createState() =>
+      _ChatProfessorInitialPageState();
 }
 
 class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
-  // 📦 VARIABLES DE ESTADO
-  List<MessageResponse> _mensajes = [];           // Lista de mensajes reales
-  bool _isLoading = true;                          // Control de carga
-  String? _error;                                   // Mensaje de error
-  final TextEditingController _respuestaController = TextEditingController(); // Control del input
-  late String _status;                              // Estado actual de la conversación
-  
-  // 🎨 CONSTANTES DE COLOR
-  static const teal = Color(0xFF2CB9B2);
-  static const bgSoft = Color(0xFFEFF7F6);
-  static const selectedBlue = Color(0xFF0C6F8A);
-  static const urgentRed = Color(0xFFD32F2F);       // Color para urgente
+  List<MessageResponse> _mensajes = [];
+  bool _isLoading = true;
+  String? _error;
+  final TextEditingController _respuestaController = TextEditingController();
+  late String _status;
 
-  // 🚀 INICIALIZACIÓN
+  // polling: temporizador que revisa mensajes nuevos automáticamente
+  Timer? _pollingTimer;
+
+  // polling: evita varias peticiones simultáneas
+  bool _isRefreshing = false;
+
+  static const bgSoft = Color(0xFFEFF7F6);
+
+  String get _baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:8080';
+    }
+    return 'http://10.0.2.2:8080';
+  }
+
   @override
   void initState() {
     super.initState();
-    _status = widget.status;                         // Estado inicial desde widget
-    _cargarConversacionCompleta();                    // Cargar mensajes reales
-    print('🔵 Chat iniciado - ID: ${widget.conversacionId}');
+
+    _status = _normalizarEstado(widget.status);
+    _cargarConversacionCompleta();
+
+    // polling: actualiza la conversación cada 2 segundos sin recargar la página
+    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      await _cargarConversacionCompleta(silencioso: true);
+    });
   }
 
   @override
   void dispose() {
-    _respuestaController.dispose();                   // Limpiar controlador
+    // polling: cancela el temporizador al salir del chat
+    _pollingTimer?.cancel();
+
+    _respuestaController.dispose();
     super.dispose();
   }
 
-  // 📡 CARGAR CONVERSACIÓN COMPLETA DESDE SPRINGBOOT
-  // GET /api/conversaciones/{id}
-  Future<void> _cargarConversacionCompleta() async {
-    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}';
-    print('📡 Cargando conversación: $url');
-    
+  DateTime? _parseFecha(String? fecha) {
+    if (fecha == null || fecha.trim().isEmpty) return null;
+
+    final iso = DateTime.tryParse(fecha);
+    if (iso != null) return iso;
+
+    final formatos = [
+      'dd/MM/yyyy HH:mm:ss',
+      'dd/MM/yyyy HH:mm',
+      'yyyy-MM-dd HH:mm:ss',
+      'yyyy-MM-dd HH:mm',
+    ];
+
+    for (final formato in formatos) {
+      try {
+        return DateFormat(formato).parse(fecha);
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
+  String _normalizarEstado(String estado) {
+    switch (estado) {
+      case 'PENDIENTE':
+        return 'Pendiente';
+      case 'EN_REVISION':
+        return 'En revisión';
+      case 'RESUELTO':
+        return 'Resuelto';
+      case 'Pendiente':
+      case 'En revisión':
+      case 'Resuelto':
+        return estado;
+      default:
+        return 'Pendiente';
+    }
+  }
+
+  Future<void> _marcarMensajesAlumnoComoLeidos() async {
+    final uri = Uri.parse(
+      '$_baseUrl/api/conversaciones/${widget.conversacionId}/leidos',
+    ).replace(queryParameters: {'emisor': 'alumno'});
+
     try {
-      final response = await http.get(Uri.parse(url));
-      
+      final response = await http.post(uri);
+
+      print('Marcando leídos alumno: ${response.statusCode}');
+      print('Respuesta: ${response.body}');
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        print('No se pudieron marcar como leídos: ${response.body}');
+      }
+    } catch (e) {
+      print('Error marcando mensajes del alumno como leídos: $e');
+    }
+  }
+
+  Future<void> _cargarConversacionCompleta({bool silencioso = false}) async {
+    if (_isRefreshing) return;
+
+    _isRefreshing = true;
+
+    final uri =
+        Uri.parse(
+          '$_baseUrl/api/conversaciones/${widget.conversacionId}',
+        ).replace(
+          queryParameters: {
+            '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
+          },
+        );
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+      );
+
+      print('PROFESOR GET status: ${response.statusCode}');
+      print('PROFESOR GET body: ${response.body}');
+
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
-        final conversacion = ConversacionResponse.fromJson(json);
-        
-        setState(() {
-          _mensajes = conversacion.mensajes;
-          _isLoading = false;
+
+        final mensajesOrdenados = <MessageResponse>[];
+
+        if (json['conversacion'] != null &&
+            json['conversacion']['mensajes'] != null) {
+          for (final msgJson in json['conversacion']['mensajes']) {
+            mensajesOrdenados.add(MessageResponse.fromJson(msgJson));
+          }
+        } else if (json['mensajes'] != null) {
+          for (final msgJson in json['mensajes']) {
+            mensajesOrdenados.add(MessageResponse.fromJson(msgJson));
+          }
+        }
+
+        mensajesOrdenados.sort((a, b) {
+          final fechaA = _parseFecha(a.fecha);
+          final fechaB = _parseFecha(b.fecha);
+
+          if (fechaA != null && fechaB != null) {
+            final comparacionFecha = fechaA.compareTo(fechaB);
+
+            if (comparacionFecha != 0) {
+              return comparacionFecha;
+            }
+          }
+
+          return a.id.compareTo(b.id);
         });
-        
-        // Actualizar el estado si viene del backend
-        if (conversacion.estado != null) {
+
+        String? estadoBackend;
+
+        if (json['estado'] != null) {
+          estadoBackend = json['estado'].toString();
+        } else if (json['conversacion'] != null &&
+            json['conversacion']['estado'] != null) {
+          estadoBackend = json['conversacion']['estado'].toString();
+        }
+
+        if (!mounted) return;
+
+        setState(() {
+          _mensajes = mensajesOrdenados;
+          _isLoading = false;
+          _error = null;
+
+          if (estadoBackend != null) {
+            _status = _normalizarEstado(estadoBackend);
+          }
+        });
+
+        await _marcarMensajesAlumnoComoLeidos();
+      } else {
+        if (!mounted) return;
+
+        if (!silencioso) {
           setState(() {
-            _status = _mapEstado(conversacion.estado!);
+            _error = 'Error al cargar la conversación (${response.statusCode})';
+            _isLoading = false;
           });
         }
-        
-        print('✅ Conversación cargada: ${_mensajes.length} mensajes');
-      } else {
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      if (!silencioso) {
         setState(() {
-          _error = 'Error al cargar la conversación (${response.statusCode})';
+          _error = 'Error de conexión: $e';
           _isLoading = false;
         });
       }
-    } catch (e) {
-      print('❌ Error de conexión: $e');
-      setState(() {
-        _error = 'Error de conexión: $e';
-        _isLoading = false;
-      });
+    } finally {
+      _isRefreshing = false;
     }
   }
 
-  // 🔄 CONVERTIR ESTADO DEL BACKEND AL FORMATO DE LA UI
-  String _mapEstado(String estado) {
-    switch (estado) {
-      case 'PENDIENTE': return 'Pendiente';
-      case 'EN_REVISION': return 'En revisión';
-      case 'RESUELTO': return 'Resuelto';
-      default: return 'Pendiente';
-    }
-  }
-
-  // 📤 ASIGNAR CONVERSACIÓN AL PROFESOR (PATCH)
-  // Solo se llama cuando está PENDIENTE y se quiere pasar a EN_REVISION
   Future<void> _asignarYRevisar() async {
-    // Mostrar carga
     setState(() {
       _isLoading = true;
     });
 
-    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}/asignar';
-    final fullUrl = '$url?revisorId=${widget.revisorId}&revisorNombre=${Uri.encodeComponent(widget.revisorNombre)}';
-    
+    final uri =
+        Uri.parse(
+          '$_baseUrl/api/conversaciones/${widget.conversacionId}/asignar',
+        ).replace(
+          queryParameters: {
+            'revisorId': widget.revisorId,
+            'revisorNombre': widget.revisorNombre,
+          },
+        );
+
     try {
-      print('📤 Asignando conversación a: ${widget.revisorNombre}');
-      
       final response = await http.patch(
-        Uri.parse(fullUrl),
+        uri,
         headers: {'Content-Type': 'application/json'},
       );
-      
-      print('📥 Status code: ${response.statusCode}');
-      
+
       if (response.statusCode == 200) {
-        // ✅ Éxito: actualizar estado local
+        if (!mounted) return;
+
         setState(() {
           _status = 'En revisión';
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Conversación asignada correctamente'),
+            content: Text('Conversación asignada correctamente'),
             backgroundColor: Colors.green,
           ),
         );
-        
-        // Recargar conversación para obtener datos actualizados
-        await _cargarConversacionCompleta();
-        
+
+        await _cargarConversacionCompleta(silencioso: true);
       } else {
         throw Exception('Error al asignar: ${response.body}');
       }
     } catch (e) {
-      print('❌ Error: $e');
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al asignar: $e'),
@@ -176,43 +303,40 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
     }
   }
 
-  // 📤 CAMBIAR ESTADO (solo para EN_REVISION → RESUELTO)
   Future<void> _marcarResuelto() async {
-    // Mostrar carga
     setState(() {
       _isLoading = true;
     });
 
-    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}/estado?nuevoEstado=RESUELTO';
-    
+    final uri = Uri.parse(
+      '$_baseUrl/api/conversaciones/${widget.conversacionId}/estado',
+    ).replace(queryParameters: {'nuevoEstado': 'RESUELTO'});
+
     try {
-      print('📤 Marcando como resuelto');
-      
       final response = await http.patch(
-        Uri.parse(url),
+        uri,
         headers: {'Content-Type': 'application/json'},
       );
-      
-      print('📥 Status code: ${response.statusCode}');
-      
+
       if (response.statusCode == 200) {
-        // ✅ Éxito: actualizar estado local
+        if (!mounted) return;
+
         setState(() {
           _status = 'Resuelto';
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Conversación marcada como resuelta'),
+            content: Text('Conversación marcada como resuelta'),
             backgroundColor: Colors.green,
           ),
         );
-        
       } else {
         throw Exception('Error al marcar resuelto: ${response.body}');
       }
     } catch (e) {
-      print('❌ Error: $e');
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al marcar resuelto: $e'),
@@ -228,12 +352,9 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
     }
   }
 
-  // 📤 ENVIAR RESPUESTA DEL PROFESOR
-  // POST /api/conversaciones/{id}/responder
   Future<void> _enviarRespuesta() async {
     final contenido = _respuestaController.text.trim();
-    
-    // Validar que no esté vacío
+
     if (contenido.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -244,7 +365,6 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
       return;
     }
 
-    // Validar que la conversación esté en revisión (solo se puede responder si está asignada)
     if (!_isReview) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -255,16 +375,14 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
       return;
     }
 
-    // Mostrar indicador de carga
     setState(() {
       _isLoading = true;
     });
 
-    final url = 'http://10.0.2.2:8080/api/conversaciones/${widget.conversacionId}/responder';
-    
+    final url =
+        '$_baseUrl/api/conversaciones/${widget.conversacionId}/responder';
+
     try {
-      print('📤 Enviando respuesta...');
-      
       final response = await http.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
@@ -274,17 +392,17 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
           'revisorNombre': widget.revisorNombre,
         }),
       );
-      
-      print('📥 Status code: ${response.statusCode}');
-      
+
       if (response.statusCode == 200) {
-        // ✅ Éxito: limpiar campo y recargar mensajes
         _respuestaController.clear();
-        await _cargarConversacionCompleta();
-        
+
+        await _cargarConversacionCompleta(silencioso: true);
+
+        if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Respuesta enviada'),
+            content: Text('Respuesta enviada'),
             backgroundColor: Colors.green,
           ),
         );
@@ -292,7 +410,8 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
         throw Exception('Error al enviar: ${response.body}');
       }
     } catch (e) {
-      print('❌ Error: $e');
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al enviar: $e'),
@@ -308,7 +427,6 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
     }
   }
 
-  // 🎨 WIDGET: AppBar personalizada
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
@@ -322,7 +440,7 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Image.asset('assets/images/quiethelp_logo.png', height: 28),
+          SvgPicture.asset('assets/images/quiethelp_logo.svg', height: 28),
           const SizedBox(width: 8),
           const Text(
             'QuietHelp',
@@ -330,199 +448,15 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
           ),
         ],
       ),
-      actions: [
-        IconButton(
-          onPressed: () {}, 
-          icon: const Icon(Icons.notifications_none_outlined)
-        ),
-        const SizedBox(width: 6),
-      ],
     );
   }
 
-  // 💬 WIDGET: Lista de mensajes (historial completo)
-  Widget _buildMensajesList() {
-    if (_mensajes.isEmpty) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Center(
-            child: Text('No hay mensajes en esta conversación'),
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _mensajes.length,
-      itemBuilder: (context, index) {
-        final msg = _mensajes[index];
-        final esProfesor = msg.emisor == 'profesor';
-        
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  esProfesor ? '👨‍🏫 Profesor' : '👤 Alumno',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: esProfesor ? teal : Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(msg.mensaje),
-                const SizedBox(height: 4),
-                Text(
-                  msg.fecha,
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // 📝 WIDGET: Área de respuesta (input + botón)
-  Widget _buildRespuestaArea() {
-    // Si está resuelto, no se puede responder
-    if (_isSolved) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Center(
-            child: Text(
-              '✅ Conversación resuelta',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Si está pendiente, no se puede responder (hay que asignar primero)
-    if (_isPending) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Center(
-            child: Text(
-              '📌 Asigna la conversación para poder responder',
-              style: TextStyle(color: Colors.orange),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Solo se muestra si está en revisión
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🚨 Etiqueta de URGENTE (si aplica)
-            if (widget.urgente) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: urgentRed.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: urgentRed.withOpacity(0.3)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.warning_amber_rounded, size: 16, color: urgentRed),
-                    const SizedBox(width: 6),
-                    Text(
-                      'URGENTE',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: urgentRed,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            
-            // Campo de texto para la respuesta
-            const Text(
-              'Escribe tu respuesta:',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _respuestaController,
-              decoration: InputDecoration(
-                hintText: 'Mensaje del profesor...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.all(12),
-              ),
-              maxLines: 4,
-              minLines: 2,
-              enabled: !_isLoading,
-            ),
-            const SizedBox(height: 12),
-            
-            // Botón de enviar
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _enviarRespuesta,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: teal,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        'Enviar mensaje',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 🔄 GETTERS PARA ESTADOS
   bool get _isPending => _status == 'Pendiente';
   bool get _isReview => _status == 'En revisión';
   bool get _isSolved => _status == 'Resuelto';
 
-  // 🏗️ CONSTRUCCIÓN DE LA PANTALLA
   @override
   Widget build(BuildContext context) {
-    // 📍 Manejo de estados de carga y error
     if (_isLoading && _mensajes.isEmpty) {
       return Scaffold(
         backgroundColor: bgSoft,
@@ -531,7 +465,7 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
       );
     }
 
-    if (_error != null) {
+    if (_error != null && _mensajes.isEmpty) {
       return Scaffold(
         backgroundColor: bgSoft,
         appBar: _buildAppBar(),
@@ -559,89 +493,72 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
       );
     }
 
-    // 📱 Pantalla principal
     return Scaffold(
       backgroundColor: bgSoft,
       appBar: _buildAppBar(),
-      body: LayoutBuilder(builder: (context, constraints) {
-        final pad = constraints.maxWidth >= 900 ? 64.0 : 22.0;
-        
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(pad, 14, pad, 24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1200),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 🃏 Tarjeta de detalle con lógica de estados
-                  _DetailCard(
-                    category: widget.category,
-                    status: _status,
-                    dateText: widget.dateText,
-                    schoolText: widget.schoolText,
-                    groupText: widget.groupText,
-                    message: widget.message,
-                    isPending: _isPending,
-                    isReview: _isReview,
-                    isSolved: _isSolved,
-                    onStatusTap: (nuevoEstado) async {
-                      // REGLAS DE NEGOCIO:
-                      // - Pendiente → En revisión: ASIGNAR
-                      // - En revisión → Resuelto: RESOLVER
-                      // - Cualquier otra combinación: NO PERMITIDA
-                      
-                      if (_isPending && nuevoEstado == 'En revisión') {
-                        await _asignarYRevisar();
-                      }
-                      else if (_isReview && nuevoEstado == 'Resuelto') {
-                        await _marcarResuelto();
-                      }
-                      else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('No se puede cambiar de $_status a $nuevoEstado'),
-                            backgroundColor: Colors.orange,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final pad = constraints.maxWidth >= 900 ? 64.0 : 22.0;
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(pad, 14, pad, 24),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: _DetailCard(
+                  category: widget.category,
+                  status: _status,
+                  dateText: widget.dateText,
+                  schoolText: widget.schoolText,
+                  groupText: widget.groupText,
+                  mensajes: _mensajes,
+                  isPending: _isPending,
+                  isReview: _isReview,
+                  isSolved: _isSolved,
+                  isLoading: _isLoading,
+                  respuestaController: _respuestaController,
+                  onSend: _enviarRespuesta,
+                  urgente: widget.urgente,
+                  onStatusTap: (nuevoEstado) async {
+                    if (_isPending && nuevoEstado == 'En revisión') {
+                      await _asignarYRevisar();
+                    } else if (_isReview && nuevoEstado == 'Resuelto') {
+                      await _marcarResuelto();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'No se puede cambiar de $_status a $nuevoEstado',
                           ),
-                        );
-                      }
-                    },
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // 💬 Historial de mensajes
-                  _buildMensajesList(),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // 📝 Área de respuesta
-                  _buildRespuestaArea(),
-                  
-                  const SizedBox(height: 16),
-                ],
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                ),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        },
+      ),
     );
   }
 }
 
-// ==================== WIDGETS PRIVADOS ====================
-
-// 🃏 Tarjeta de detalle del alumno
 class _DetailCard extends StatelessWidget {
   final String category;
   final String status;
   final String dateText;
   final String schoolText;
   final String groupText;
-  final String message;
+  final List<MessageResponse> mensajes;
   final bool isPending;
   final bool isReview;
   final bool isSolved;
+  final bool isLoading;
+  final TextEditingController respuestaController;
+  final VoidCallback onSend;
+  final bool urgente;
   final ValueChanged<String> onStatusTap;
 
   const _DetailCard({
@@ -650,15 +567,19 @@ class _DetailCard extends StatelessWidget {
     required this.dateText,
     required this.schoolText,
     required this.groupText,
-    required this.message,
+    required this.mensajes,
     required this.isPending,
     required this.isReview,
     required this.isSolved,
+    required this.isLoading,
+    required this.respuestaController,
+    required this.onSend,
+    required this.urgente,
     required this.onStatusTap,
   });
 
-  static const teal = Color(0xFF2CB9B2);
   static const selectedBlue = Color(0xFF0C6F8A);
+  static const urgentRed = Color(0xFFD32F2F);
 
   @override
   Widget build(BuildContext context) {
@@ -679,110 +600,147 @@ class _DetailCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🏷️ Categoría y estado
           Row(
             children: [
               const Icon(Icons.menu_book_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(
-                category,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              Expanded(
+                child: Text(
+                  category,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
               const SizedBox(width: 10),
               _StatusPill(status: status),
             ],
           ),
           const SizedBox(height: 10),
-          
-          // 📅 Información contextual
           Wrap(
             spacing: 16,
             runSpacing: 8,
             alignment: WrapAlignment.start,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.access_time, size: 14, color: Colors.black.withOpacity(0.45)),
-                  const SizedBox(width: 6),
-                  Text(
-                    dateText,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black.withOpacity(0.45),
-                    ),
-                  ),
-                ],
+              _InfoRow(icon: Icons.access_time, text: dateText),
+              _InfoRow(icon: Icons.location_on_outlined, text: schoolText),
+              if (groupText.isNotEmpty)
+                _InfoRow(icon: Icons.group_outlined, text: groupText),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Divider(color: Colors.black.withOpacity(0.08), height: 1),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Text(
+                'Chat',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.location_on_outlined, size: 14, color: Colors.black.withOpacity(0.45)),
-                  const SizedBox(width: 6),
-                  Text(
-                    schoolText,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black.withOpacity(0.45),
-                    ),
+              const SizedBox(width: 10),
+              if (urgente)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
                   ),
-                ],
-              ),
-              if (groupText.isNotEmpty) // Solo mostrar si hay curso/grupo
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.group_outlined, size: 14, color: Colors.black.withOpacity(0.45)),
-                    const SizedBox(width: 6),
-                    Text(
-                      groupText,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black.withOpacity(0.45),
+                  decoration: BoxDecoration(
+                    color: urgentRed.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: urgentRed.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 14,
+                        color: urgentRed,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 5),
+                      Text(
+                        'URGENTE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: urgentRed,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
             ],
           ),
-          
           const SizedBox(height: 12),
-          Divider(color: Colors.black.withOpacity(0.08), height: 1),
-
-          // 💬 Mensaje del alumno
-          const SizedBox(height: 14),
-          const Text(
-            'Mensaje del alumno',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.03),
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.black.withOpacity(0.06)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
-            child: Text(
-              message,
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-                color: Colors.black.withOpacity(0.65),
-              ),
+            child: Column(
+              children: [
+                if (mensajes.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No hay mensajes en esta conversación'),
+                  ),
+                ...mensajes.map((msg) {
+                  final esProfesor = msg.emisor == 'profesor';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Align(
+                      alignment: esProfesor
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: _ChatBubble(
+                        fromProfessor: esProfesor,
+                        text: msg.mensaje,
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
+                if (isReview) ...[
+                  _ProfessorInputBox(
+                    controller: respuestaController,
+                    onSend: onSend,
+                    isLoading: isLoading,
+                  ),
+                ] else if (isSolved) ...[
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Conversación resuelta',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ] else ...[
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Asigna la conversación para poder responder',
+                      style: TextStyle(color: Colors.orange),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          
           const SizedBox(height: 24),
           Divider(color: Colors.black.withOpacity(0.08), height: 1),
-
-          // 🔘 Botones de estado
           const SizedBox(height: 40),
-          
           LayoutBuilder(
             builder: (context, constraints) {
               if (constraints.maxWidth < 500) {
@@ -813,44 +771,43 @@ class _DetailCard extends StatelessWidget {
                     ),
                   ],
                 );
-              } else {
-                return Row(
-                  children: [
-                    Expanded(
-                      child: _StateButton(
-                        text: 'Pendiente',
-                        icon: Icons.access_time,
-                        selected: isPending,
-                        selectedColor: selectedBlue,
-                        onTap: () => onStatusTap('Pendiente'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _StateButton(
-                        text: 'En revisión',
-                        icon: Icons.chat_bubble_outline,
-                        selected: isReview,
-                        selectedColor: selectedBlue,
-                        onTap: () => onStatusTap('En revisión'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _StateButton(
-                        text: 'Resuelto',
-                        icon: Icons.check_circle_outline,
-                        selected: isSolved,
-                        selectedColor: selectedBlue,
-                        onTap: () => onStatusTap('Resuelto'),
-                      ),
-                    ),
-                  ],
-                );
               }
+
+              return Row(
+                children: [
+                  Expanded(
+                    child: _StateButton(
+                      text: 'Pendiente',
+                      icon: Icons.access_time,
+                      selected: isPending,
+                      selectedColor: selectedBlue,
+                      onTap: () => onStatusTap('Pendiente'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _StateButton(
+                      text: 'En revisión',
+                      icon: Icons.chat_bubble_outline,
+                      selected: isReview,
+                      selectedColor: selectedBlue,
+                      onTap: () => onStatusTap('En revisión'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _StateButton(
+                      text: 'Resuelto',
+                      icon: Icons.check_circle_outline,
+                      selected: isSolved,
+                      selectedColor: selectedBlue,
+                      onTap: () => onStatusTap('Resuelto'),
+                    ),
+                  ),
+                ],
+              );
             },
           ),
-          
           const SizedBox(height: 8),
         ],
       ),
@@ -858,9 +815,134 @@ class _DetailCard extends StatelessWidget {
   }
 }
 
-// 🏷️ Píldora de estado (colores según estado)
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _InfoRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: Colors.black.withOpacity(0.45)),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            color: Colors.black.withOpacity(0.45),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChatBubble extends StatelessWidget {
+  final bool fromProfessor;
+  final String text;
+
+  const _ChatBubble({required this.fromProfessor, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = fromProfessor
+        ? const Color(0xFF98CFEA)
+        : const Color(0xFFDDEAF0);
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 340),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12.5,
+          height: 1.35,
+          fontWeight: FontWeight.w700,
+          color: Colors.black.withOpacity(0.78),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfessorInputBox extends StatelessWidget {
+  final TextEditingController controller;
+  final VoidCallback onSend;
+  final bool isLoading;
+
+  const _ProfessorInputBox({
+    required this.controller,
+    required this.onSend,
+    required this.isLoading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              minLines: 1,
+              maxLines: 4,
+              enabled: !isLoading,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) {
+                if (!isLoading) {
+                  onSend();
+                }
+              },
+              decoration: InputDecoration(
+                hintText: 'Mensaje...',
+                hintStyle: TextStyle(
+                  color: Colors.black.withOpacity(0.25),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                ),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 38,
+            width: 42,
+            child: IconButton(
+              onPressed: isLoading ? null : onSend,
+              icon: Icon(
+                Icons.send_rounded,
+                size: 18,
+                color: isLoading
+                    ? Colors.black.withOpacity(0.3)
+                    : Colors.black.withOpacity(0.55),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatusPill extends StatelessWidget {
   final String status;
+
   const _StatusPill({required this.status});
 
   @override
@@ -868,10 +950,10 @@ class _StatusPill extends StatelessWidget {
     final isPending = status == 'Pendiente';
     final isReview = status == 'En revisión';
     final isSolved = status == 'Resuelto';
-    
+
     Color pillBg;
     Color pillText;
-    
+
     if (isPending) {
       pillBg = const Color(0xFFFFF2DE);
       pillText = const Color(0xFFE09B2D);
@@ -896,17 +978,24 @@ class _StatusPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            isPending ? Icons.access_time : 
-            isReview ? Icons.chat_bubble_outline : 
-            isSolved ? Icons.check_circle_outline : 
-            Icons.folder_outlined,
-            size: 14, 
-            color: pillText
+            isPending
+                ? Icons.access_time
+                : isReview
+                ? Icons.chat_bubble_outline
+                : isSolved
+                ? Icons.check_circle_outline
+                : Icons.folder_outlined,
+            size: 14,
+            color: pillText,
           ),
           const SizedBox(width: 6),
           Text(
             status,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: pillText),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: pillText,
+            ),
           ),
         ],
       ),
@@ -914,7 +1003,6 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-// 🔘 Botón de estado individual
 class _StateButton extends StatelessWidget {
   final String text;
   final IconData icon;
@@ -946,12 +1034,18 @@ class _StateButton extends StatelessWidget {
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: fg),
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: fg,
+          ),
         ),
         style: OutlinedButton.styleFrom(
           backgroundColor: bg,
           side: BorderSide(color: border, width: 1.2),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
         ),
       ),
     );

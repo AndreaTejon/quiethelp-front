@@ -1,6 +1,5 @@
 import '../models/message_response.dart';
 
-// Para recibir la conversación completa (QhDto)
 class ConversacionResponse {
   final int id;
   final String? estado;
@@ -9,7 +8,7 @@ class ConversacionResponse {
   final String? fechaInicio;
   final String? fechaAsignacion;
   final String? fechaResolucion;
-  final EmisorData emisor;           // datos del alumno
+  final EmisorData emisor;
   final List<MessageResponse> mensajes;
 
   ConversacionResponse({
@@ -24,44 +23,82 @@ class ConversacionResponse {
     required this.mensajes,
   });
 
-factory ConversacionResponse.fromJson(Map<String, dynamic> json) {
-  print('📥 JSON recibido: $json');
-  
-  // El ID está dentro de conversacion, no al mismo nivel
-  final conversacionJson = json['conversacion'] ?? {};
-  
-  final emisorJson = json['emisor'] ?? {};
-  
-  List<MessageResponse> mensajesList = [];
-  if (conversacionJson['mensajes'] != null) {
-    mensajesList = List<MessageResponse>.from(
-      conversacionJson['mensajes'].map(
-        (x) => MessageResponse.fromJson(x)
-      )
+  factory ConversacionResponse.fromJson(Map<String, dynamic> json) {
+    final conversacionJson =
+        Map<String, dynamic>.from(json['conversacion'] ?? {});
+
+    final emisorJson =
+        Map<String, dynamic>.from(json['emisor'] ?? {});
+
+    final mensajesJson = conversacionJson['mensajes'];
+
+    final mensajesList = mensajesJson is List
+        ? mensajesJson
+            .map(
+              (x) => MessageResponse.fromJson(
+                Map<String, dynamic>.from(x),
+              ),
+            )
+            .toList()
+        : <MessageResponse>[];
+
+    return ConversacionResponse(
+      id: _parseInt(conversacionJson['id']),
+      estado: conversacionJson['estado']?.toString(),
+      revisorId: conversacionJson['revisorId']?.toString(),
+      revisorNombre: conversacionJson['revisorNombre']?.toString(),
+      fechaInicio: conversacionJson['fechaInicio']?.toString(),
+      fechaAsignacion: conversacionJson['fechaAsignacion']?.toString(),
+      fechaResolucion: conversacionJson['fechaResolucion']?.toString(),
+      emisor: EmisorData.fromJson(emisorJson),
+      mensajes: mensajesList,
     );
   }
 
-  return ConversacionResponse(
-    id: int.tryParse(conversacionJson['id'] ?? '0') ?? 0,  // ← TOMAR EL ID DE CONVERSACION
-    estado: conversacionJson['estado'],                    // ← Estado también está en conversacion
-    revisorId: conversacionJson['revisorId'],
-    revisorNombre: conversacionJson['revisorNombre'],
-    fechaInicio: conversacionJson['fechaInicio'],        // ← En el DTO se llama fechaInicio
-    fechaAsignacion: conversacionJson['fechaAsignacion'],
-    fechaResolucion: conversacionJson['fechaResolucion'],
-    emisor: EmisorData.fromJson(emisorJson),
-    mensajes: mensajesList,
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  bool get tieneMensajes => mensajes.isNotEmpty;
+
+  MessageResponse? get primerMensaje {
+  if (!tieneMensajes) return null;
+
+  final mensajesOrdenados = [...mensajes];
+
+  mensajesOrdenados.sort((a, b) {
+    final fechaA = _parseFecha(a.fecha);
+    final fechaB = _parseFecha(b.fecha);
+
+    if (fechaA == null && fechaB == null) return 0;
+    if (fechaA == null) return 1;
+    if (fechaB == null) return -1;
+
+    return fechaB.compareTo(fechaA);
+  });
+
+  return mensajesOrdenados.first;
+}
+
+static DateTime? _parseFecha(String fecha) {
+  final partes = fecha.split(' ');
+  if (partes.length != 2) return DateTime.tryParse(fecha);
+
+  final fechaPartes = partes[0].split('/');
+  final horaPartes = partes[1].split(':');
+
+  if (fechaPartes.length != 3 || horaPartes.length < 2) {
+    return DateTime.tryParse(fecha);
+  }
+
+  return DateTime.tryParse(
+    '${fechaPartes[2]}-${fechaPartes[1]}-${fechaPartes[0]} '
+    '${horaPartes[0]}:${horaPartes[1]}:00',
   );
 }
-
-  // Para saber si tiene mensajes
-  bool get tieneMensajes => mensajes.isNotEmpty;
-  
-  // Getter para el primer mensaje (dashboard)
-  MessageResponse? get primerMensaje => tieneMensajes ? mensajes.first : null;
 }
 
-// Datos del emisor (alumno)
 class EmisorData {
   final String? curso;
   final String? grupo;
@@ -77,10 +114,10 @@ class EmisorData {
 
   factory EmisorData.fromJson(Map<String, dynamic> json) {
     return EmisorData(
-      curso: json['curso'],
-      grupo: json['grupo'],
-      tarjeta: json['tarjeta'] ?? 'Otro',
-      urgente: json['urgente'] ?? false,
+      curso: json['curso']?.toString(),
+      grupo: json['grupo']?.toString(),
+      tarjeta: json['tarjeta']?.toString() ?? 'Otro',
+      urgente: json['urgente'] == true,
     );
   }
 }

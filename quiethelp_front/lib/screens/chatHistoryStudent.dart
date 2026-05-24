@@ -1,11 +1,15 @@
 // chatHistoryStudent.dart
-// Muestra el historial de conversaciones del alumno (solo PENDIENTES y EN_REVISION)
-// Las conversaciones resueltas NO aparecen
 
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
+
 import 'chatPageStudent.dart';
+import 'studentHomePage.dart';
+
 import '../models/conversacion_response.dart';
 import '../services/token_storage.dart';
 
@@ -17,24 +21,47 @@ class ChatHistoryStudent extends StatefulWidget {
 }
 
 class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
-  static const teal = Color(0xFF2CB9B2);
   static const bgSoft = Color(0xFFEFF7F6);
-  
+
+  String get _baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:8080';
+    }
+    return 'http://10.0.2.2:8080';
+  }
+
   List<ConversacionResponse> _conversaciones = [];
   bool _isLoading = true;
   String? _error;
   String? _token;
 
+  Timer? _pollingTimer;
+
   @override
   void initState() {
     super.initState();
+
     _cargarTokenYConversaciones();
+
+    _pollingTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) async {
+        if (_token != null) {
+          await _cargarConversaciones(_token!);
+        }
+      },
+    );
   }
 
-  // 📡 Cargar token y luego conversaciones
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _cargarTokenYConversaciones() async {
     final token = await TokenStorage.getToken();
-    
+
     if (token == null) {
       setState(() {
         _error = 'No hay sesión activa';
@@ -50,39 +77,86 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     await _cargarConversaciones(token);
   }
 
-  // 📡 OBTENER CONVERSACIONES DEL ALUMNO DESDE SPRINGBOOT
-  // GET /api/conversaciones/alumno?token=TOKEN
+  DateTime? _parseFecha(String? fecha) {
+    if (fecha == null || fecha.trim().isEmpty) return null;
+
+    final iso = DateTime.tryParse(fecha);
+    if (iso != null) return iso;
+
+    return null;
+  }
+
+  String _previewUltimoMensaje(ConversacionResponse conv) {
+    final mensajesOrdenados = [...conv.mensajes];
+
+    mensajesOrdenados.sort((a, b) {
+      final fechaA = _parseFecha(a.fecha);
+      final fechaB = _parseFecha(b.fecha);
+
+      if (fechaA == null && fechaB == null) return 0;
+      if (fechaA == null) return 1;
+      if (fechaB == null) return -1;
+
+      return fechaA.compareTo(fechaB);
+    });
+
+    if (mensajesOrdenados.isEmpty) return '';
+
+    final ultimoMensaje = mensajesOrdenados.last;
+
+    if (ultimoMensaje.emisor == 'alumno') {
+      return 'Tú: ${ultimoMensaje.mensaje}';
+    }
+
+    return ultimoMensaje.mensaje;
+  }
+
   Future<void> _cargarConversaciones(String token) async {
-    final url = 'http://10.0.2.2:8080/api/conversaciones/alumno?token=$token';
-    
-    print('📡 Cargando historial del alumno: $url');
-    
+    final uri = Uri.parse(
+      '$_baseUrl/api/conversaciones/alumno',
+    ).replace(queryParameters: {'token': token});
+
+    print('Cargando historial del alumno: $uri');
+
     try {
-      final response = await http.get(Uri.parse(url));
-      
+      final response = await http.get(uri);
+
       if (response.statusCode == 200) {
-        List<dynamic> jsonList = jsonDecode(response.body);
-        
-        // Filtrar SOLO PENDIENTES y EN REVISION (las resueltas no se muestran)
+        final List<dynamic> jsonList = jsonDecode(response.body);
+
         final conversaciones = jsonList
             .map((json) => ConversacionResponse.fromJson(json))
-            .where((conv) => conv.estado != 'RESUELTO')
+            .where((conv) {
+              final tieneRespuestaProfesor = conv.mensajes.any(
+                (msg) => msg.emisor == 'profesor',
+              );
+
+              return conv.estado == 'EN_REVISION' && tieneRespuestaProfesor;
+            })
             .toList();
-        
+
+        if (!mounted) return;
+
         setState(() {
           _conversaciones = conversaciones;
           _isLoading = false;
+          _error = null;
         });
-        
-        print('✅ Cargadas ${_conversaciones.length} conversaciones activas');
+
+        print('Cargadas ${_conversaciones.length} conversaciones activas');
       } else {
+        if (!mounted) return;
+
         setState(() {
           _error = 'Error al cargar historial';
           _isLoading = false;
         });
       }
     } catch (e) {
-      print('❌ Error: $e');
+      print('Error: $e');
+
+      if (!mounted) return;
+
       setState(() {
         _error = 'Error de conexión';
         _isLoading = false;
@@ -90,7 +164,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     }
   }
 
-  // 🔄 Combinar curso y grupo
   String _combinarCursoGrupo(String? curso, String? grupo) {
     if (curso != null && grupo != null) {
       return '$curso $grupo';
@@ -103,7 +176,15 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     }
   }
 
-  // 🎨 CONSTRUIR PANTALLA
+  void _goToStudentHome() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StudentHomePage(token: _token),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -136,14 +217,13 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     );
   }
 
-  // 🎨 AppBar
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
       elevation: 0,
       leading: IconButton(
-        onPressed: () => Navigator.maybePop(context),
+        onPressed: _goToStudentHome,
         icon: const Icon(Icons.arrow_back_ios_new, size: 18),
       ),
       titleSpacing: 0,
@@ -175,7 +255,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     );
   }
 
-  // 🎨 Cuerpo principal con manejo de estados
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
@@ -195,9 +274,16 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
         child: Column(
           children: [
             const SizedBox(height: 100),
-            Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const Icon(
+              Icons.error_outline,
+              size: 48,
+              color: Colors.red,
+            ),
             const SizedBox(height: 20),
-            Text(_error!, textAlign: TextAlign.center),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
@@ -205,6 +291,7 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
                   _isLoading = true;
                   _error = null;
                 });
+
                 _cargarTokenYConversaciones();
               },
               child: const Text('Reintentar'),
@@ -218,15 +305,25 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
       return Column(
         children: [
           const SizedBox(height: 100),
-          Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey),
+          const Icon(
+            Icons.chat_bubble_outline,
+            size: 48,
+            color: Colors.grey,
+          ),
           const SizedBox(height: 20),
           const Text(
-            'No hay conversaciones activas',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            'No hay respuestas del profesor todavía',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
           ),
           const SizedBox(height: 40),
           Container(
-            margin: const EdgeInsets.only(top: 8, bottom: 16),
+            margin: const EdgeInsets.only(
+              top: 8,
+              bottom: 16,
+            ),
             height: 1,
             color: Colors.black.withOpacity(0.08),
           ),
@@ -237,27 +334,36 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
 
     return Column(
       children: [
-        // Lista de conversaciones reales
         ..._conversaciones.map((conv) {
-          final primerMensaje = conv.primerMensaje;
-          if (primerMensaje == null) return const SizedBox();
-          
-          String titulo = conv.emisor.tarjeta;
-          String estadoTexto = conv.estado ?? 'PENDIENTE';
-          
+          final titulo = conv.emisor.tarjeta;
+          final estadoTexto = conv.estado ?? 'PENDIENTE';
+          final preview = _previewUltimoMensaje(conv);
+
+          final tieneRespuestas = conv.mensajes.any(
+            (msg) => msg.emisor == 'profesor',
+          );
+
+          final tieneNoLeidos = conv.mensajes.any(
+            (msg) => msg.emisor == 'profesor' && msg.leido == false,
+          );
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _ChatHistoryCard(
               titulo: titulo,
               tag: conv.emisor.tarjeta,
-              preview: primerMensaje.mensaje,
+              preview: preview,
               dateText: conv.fechaInicio ?? '',
               placeText: 'IES Ramiro de Maeztu (28001)',
-              courseText: _combinarCursoGrupo(conv.emisor.curso, conv.emisor.grupo),
+              courseText: _combinarCursoGrupo(
+                conv.emisor.curso,
+                conv.emisor.grupo,
+              ),
               estado: estadoTexto,
-              tieneRespuestas: conv.mensajes.length > 1,
-              onTap: () {
-                Navigator.push(
+              tieneRespuestas: tieneRespuestas,
+              tieneNoLeidos: tieneNoLeidos,
+              onTap: () async {
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => ChatPageStudent(
@@ -267,34 +373,37 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
                       tag: conv.emisor.tarjeta,
                       dateText: conv.fechaInicio ?? '',
                       placeText: 'IES Ramiro de Maeztu (28001)',
-                      courseText: _combinarCursoGrupo(conv.emisor.curso, conv.emisor.grupo),
+                      courseText: _combinarCursoGrupo(
+                        conv.emisor.curso,
+                        conv.emisor.grupo,
+                      ),
                       estado: estadoTexto,
                     ),
                   ),
                 );
+
+                if (_token != null) {
+                  await _cargarConversaciones(_token!);
+                }
               },
             ),
           );
-        }).toList(),
-        
+        }),
         const SizedBox(height: 20),
-        
-        // Línea separadora
         Container(
-          margin: const EdgeInsets.only(top: 8, bottom: 16),
+          margin: const EdgeInsets.only(
+            top: 8,
+            bottom: 16,
+          ),
           height: 1,
           color: Colors.black.withOpacity(0.08),
         ),
-        
-        // Texto informativo
         _buildInfoText(),
-        
         const SizedBox(height: 18),
       ],
     );
   }
 
-  // ℹ️ Texto informativo
   Widget _buildInfoText() {
     return Text(
       'Tus conversaciones sólo aparecen aquí cuando un profesor te responde pidiendo más información.',
@@ -309,7 +418,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
   }
 }
 
-// 🃏 Tarjeta de conversación
 class _ChatHistoryCard extends StatelessWidget {
   final String titulo;
   final String tag;
@@ -319,6 +427,7 @@ class _ChatHistoryCard extends StatelessWidget {
   final String courseText;
   final String estado;
   final bool tieneRespuestas;
+  final bool tieneNoLeidos;
   final VoidCallback onTap;
 
   const _ChatHistoryCard({
@@ -330,6 +439,7 @@ class _ChatHistoryCard extends StatelessWidget {
     required this.courseText,
     required this.estado,
     required this.tieneRespuestas,
+    required this.tieneNoLeidos,
     required this.onTap,
   });
 
@@ -368,11 +478,11 @@ class _ChatHistoryCard extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tieneNoLeidos ? const Color(0xFFE1E7E8) : Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: tieneRespuestas 
-                ? const Color(0xFF2CB9B2).withOpacity(0.3)
+            color: tieneNoLeidos
+                ? const Color(0xFF2CB9B2).withOpacity(0.45)
                 : Colors.black.withOpacity(0.06),
           ),
           boxShadow: [
@@ -388,7 +498,7 @@ class _ChatHistoryCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                if (tieneRespuestas) ...[
+                if (tieneNoLeidos) ...[
                   Container(
                     width: 8,
                     height: 8,
@@ -432,8 +542,11 @@ class _ChatHistoryCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        estado == 'EN_REVISION' ? 'En revisión' : 
-                        estado == 'RESUELTO' ? 'Resuelto' : 'Pendiente',
+                        estado == 'EN_REVISION'
+                            ? 'En revisión'
+                            : estado == 'RESUELTO'
+                                ? 'Resuelto'
+                                : 'Pendiente',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
@@ -452,41 +565,60 @@ class _ChatHistoryCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: Colors.black.withOpacity(0.5),
+                fontWeight:
+                    tieneNoLeidos ? FontWeight.w800 : FontWeight.w600,
+                color: Colors.black.withOpacity(0.55),
               ),
             ),
             const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
                 final isWide = constraints.maxWidth >= 600;
-                
+
                 if (isWide) {
                   return Row(
                     children: [
-                      _buildMetaItem(icon: Icons.access_time, text: dateText),
+                      _buildMetaItem(
+                        icon: Icons.access_time,
+                        text: dateText,
+                      ),
                       const SizedBox(width: 16),
-                      _buildMetaItem(icon: Icons.location_on_outlined, text: placeText),
+                      _buildMetaItem(
+                        icon: Icons.location_on_outlined,
+                        text: placeText,
+                      ),
                       if (courseText.isNotEmpty) ...[
                         const SizedBox(width: 16),
-                        _buildMetaItem(icon: Icons.school_outlined, text: courseText),
-                      ],
-                    ],
-                  );
-                } else {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildMetaItem(icon: Icons.access_time, text: dateText),
-                      const SizedBox(height: 8),
-                      _buildMetaItem(icon: Icons.location_on_outlined, text: placeText),
-                      if (courseText.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        _buildMetaItem(icon: Icons.school_outlined, text: courseText),
+                        _buildMetaItem(
+                          icon: Icons.school_outlined,
+                          text: courseText,
+                        ),
                       ],
                     ],
                   );
                 }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildMetaItem(
+                      icon: Icons.access_time,
+                      text: dateText,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildMetaItem(
+                      icon: Icons.location_on_outlined,
+                      text: placeText,
+                    ),
+                    if (courseText.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _buildMetaItem(
+                        icon: Icons.school_outlined,
+                        text: courseText,
+                      ),
+                    ],
+                  ],
+                );
               },
             ),
           ],
@@ -495,11 +627,18 @@ class _ChatHistoryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMetaItem({required IconData icon, required String text}) {
+  Widget _buildMetaItem({
+    required IconData icon,
+    required String text,
+  }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: Colors.black.withOpacity(0.35)),
+        Icon(
+          icon,
+          size: 14,
+          color: Colors.black.withOpacity(0.35),
+        ),
         const SizedBox(width: 6),
         Flexible(
           child: Text(

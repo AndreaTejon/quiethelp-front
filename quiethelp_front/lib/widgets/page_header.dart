@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../constants/app_theme.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class PageHeader extends StatelessWidget {
   final String title;
@@ -17,13 +17,15 @@ class PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Image.asset(
-          'assets/images/quiethelp_logo.png',
+        SvgPicture.asset(
+          'assets/images/quiethelp_logo.svg',
           width: logoSize ?? 92,
           height: logoSize ?? 92,
           fit: BoxFit.contain,
         ),
+
         const SizedBox(height: 22),
+
         Text(
           title,
           textAlign: TextAlign.center,
@@ -34,7 +36,9 @@ class PageHeader extends StatelessWidget {
             color: Colors.black,
           ),
         ),
+
         const SizedBox(height: 10),
+
         Text(
           subtitle,
           textAlign: TextAlign.center,

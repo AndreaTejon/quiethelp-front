@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+
 import '../constants/app_theme.dart';
 import '../widgets/info_card.dart';
 import '../widgets/home_button.dart';
-import '../widgets/disclaimer_text.dart';
-import 'tokenPage.dart'; 
+import 'tokenPage.dart';
 import 'signIn.dart';
 
 class HomePage extends StatelessWidget {
@@ -51,8 +52,8 @@ class HomePage extends StatelessWidget {
   }
 
   Widget _buildLogo() {
-    return Image.asset(
-      'assets/images/quiethelp_logo.png',
+    return SvgPicture.asset(
+      'assets/images/quiethelp_logo.svg',
       width: 78,
       height: 78,
       fit: BoxFit.contain,
@@ -79,7 +80,7 @@ class HomePage extends StatelessWidget {
       style: TextStyle(
         fontSize: 14,
         height: 1.25,
-        color: Colors.black.withValues(alpha: 0.45), // CORREGIDO
+        color: Colors.black.withValues(alpha: 0.45),
         fontWeight: FontWeight.w500,
       ),
     );
@@ -129,7 +130,7 @@ class HomePage extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const SignInPage()),
             );
           },
-          backgroundColor: AppColors.teal.withValues(alpha: 0.85), // CORREGIDO
+          backgroundColor: AppColors.teal.withValues(alpha: 0.85),
           height: 44,
           fontSize: 13,
         ),
@@ -143,7 +144,7 @@ class HomePage extends StatelessWidget {
       textAlign: TextAlign.center,
       style: TextStyle(
         fontSize: 11,
-        color: Colors.black.withValues(alpha: 0.35), // CORREGIDO
+        color: Colors.black.withValues(alpha: 0.35),
         fontWeight: FontWeight.w500,
       ),
     );

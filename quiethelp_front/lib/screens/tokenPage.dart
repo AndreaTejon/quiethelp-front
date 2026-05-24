@@ -28,7 +28,7 @@ class _TokenPageState extends State<TokenPage> {
   }
 
   void _onAccess() {
-    final token = _controller.text.trim().toUpperCase();
+    final token = _controller.text.trim();
 
     if (token.isEmpty) {
       _showSnackBar('Introduce un token válido');

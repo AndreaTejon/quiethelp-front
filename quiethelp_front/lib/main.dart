@@ -1,42 +1,27 @@
-  import 'package:flutter/material.dart';
-  import 'package:supabase_flutter/supabase_flutter.dart';  
-  import 'screens/loading.dart';
-  import 'services/token_storage.dart'; //Para verificar si existe token
-  import 'screens/studentHomePage.dart';
-  void main() async{
-    WidgetsFlutterBinding.ensureInitialized(); //para SharedPreferences
-    // 🔵 NUEVO: Inicializar Supabase
-    await Supabase.initialize(
-      url: 'https://losnmfekwxbvcaldnzij.supabase.co',
-      anonKey: 'sb_publishable_TPYtlAj_ZgLdCwUyzcmdqw_vM_EgQ94',
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'screens/loading.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'https://losnmfekwxbvcaldnzij.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxvc25tZmVrd3hidmNhbGRuemlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5NjE0NjgsImV4cCI6MjA4NjUzNzQ2OH0.0pDtIfK1USpt37aY-9h6zgkmSkR7OznFQ3baHImZtvE',
+  );
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'QuietHelp',
+      debugShowCheckedModeBanner: false,
+      home: const LoadingPage(),
     );
-
-      // Verificar si hay token guardado
-    final hasToken = await TokenStorage.hasToken();
-    String? token;
-    
-    if (hasToken) {
-      token = await TokenStorage.getToken();
-      print('Token encontrado: $token');
-    } else {
-      print('No hay token guardado');
-    }
-    runApp(MyApp(initialToken: token));
   }
-
-  class MyApp extends StatelessWidget {
-    final String? initialToken;
-  
-    const MyApp({super.key, this.initialToken});
-
-    @override
-    Widget build(BuildContext context) {
-      return MaterialApp(
-        title: 'QuietHelp',
-        debugShowCheckedModeBanner: false,
-        home: initialToken != null 
-          ? StudentHomePage(token: initialToken)  // Token existe, va directo a Home
-          : const LoadingPage(),                  // No hay token, va a Loading (que irá a Login)
-      );
-    }
-  }
+}

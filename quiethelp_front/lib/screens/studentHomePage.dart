@@ -1,6 +1,12 @@
+import 'dart:async'; // polling: permite crear un Timer que ejecuta la carga de notificaciones cada cierto tiempo
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:quiethelp_front/screens/homePage.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+
 import '../constants/app_theme.dart';
 import '../widgets/custom_dropdown.dart';
 import '../widgets/custom_text_field.dart';
@@ -14,12 +20,14 @@ import 'messageSent.dart';
 import 'chatHistoryStudent.dart';
 import 'signIn.dart';
 import 'aboutUs.dart';
+
 import '../services/token_storage.dart';
 import '../services/token_service.dart';
+import '../models/conversacion_response.dart';
 
 class StudentHomePage extends StatefulWidget {
   final String? token;
-  
+
   const StudentHomePage({super.key, this.token});
 
   @override
@@ -29,68 +37,115 @@ class StudentHomePage extends StatefulWidget {
 class _StudentHomePageState extends State<StudentHomePage> {
   final msgCtrl = TextEditingController();
   final groupCtrl = TextEditingController();
-  String? curso, topic;
+
+  String? curso;
+  String? topic;
+
   bool _sending = false;
+  bool _tokenValidado = false;
+  bool _hasUnreadProfessorMessages = false;
 
-//  static const String _baseUrl = 'http://localhost:8080'; 
-  static const String _baseUrl = 'http://10.0.2.2:8080'; 
+  // polling: guarda el temporizador para consultar notificaciones sin recargar la página
+  Timer? _notificationTimer;
 
-  @override
-void initState() {
-  super.initState();
-  // IMPORTANTE: Escuchar cambios en el mensaje para actualizar el botón
-  msgCtrl.addListener(_onMessageChanged);
-  
-  // VALIDAR EL TOKEN CUANDO SE ABRE LA PANTALLA
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    _validarTokenAlIniciar();
-  });
-}
-
-bool _tokenValidado = false;
-
-void _validarTokenAlIniciar() async {
-  // Si ya se validó o no hay token, salir
-  if (_tokenValidado || widget.token == null) return;
-  
-  _tokenValidado = true;
-  
-  await Future.delayed(const Duration(milliseconds: 500)); //Retraso para evitar doble llamada
-  // ESTO USA EL MISMO TokenService
-  final tokenService = TokenService();
-  final esValido = await tokenService.validateToken(widget.token!);
-  
-  if (!esValido && mounted) {
-    _showSnackBar('Token inválido o expirado');
-    
-    // Borrar token guardado
-    await TokenStorage.clearToken();
-    
-    // Ir a login
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const SignInPage()),
-      (_) => false,
-    );
+  String get _baseUrl {
+  if (kIsWeb) {
+    return 'http://localhost:8080';
   }
+  return 'http://10.0.2.2:8080';
 }
+  @override
+  void initState() {
+    super.initState();
+
+    msgCtrl.addListener(_onMessageChanged);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _validarTokenAlIniciar();
+      _cargarNotificaciones();
+
+      // polling: consulta el backend cada 5 segundos para actualizar la campanita automáticamente
+      _notificationTimer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => _cargarNotificaciones(),
+      );
+    });
+  }
 
   @override
   void dispose() {
-    // IMPORTANTE: Limpiar el listener
+    // polling: cancela el temporizador al salir de la página para evitar errores o peticiones innecesarias
+    _notificationTimer?.cancel();
+
     msgCtrl.removeListener(_onMessageChanged);
     msgCtrl.dispose();
     groupCtrl.dispose();
     super.dispose();
   }
 
-  // Forzar rebuild cuando cambia el mensaje
   void _onMessageChanged() {
     setState(() {});
   }
 
-  // Getter que se reevalúa en cada rebuild
   bool get _isValid => topic != null && msgCtrl.text.trim().isNotEmpty;
+
+  Future<void> _cargarNotificaciones() async {
+    final token = widget.token ?? await TokenStorage.getToken();
+    if (token == null) return;
+
+    final uri = Uri.parse(
+      '$_baseUrl/api/conversaciones/alumno',
+    ).replace(queryParameters: {'token': token});
+
+    try {
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = jsonDecode(response.body);
+
+        final conversaciones = jsonList
+            .map((json) => ConversacionResponse.fromJson(json))
+            .toList();
+
+        final hayNoLeidos = conversaciones.any((conv) {
+          return conv.mensajes.any(
+            (msg) => msg.emisor == 'profesor' && msg.leido == false,
+          );
+        });
+
+        if (!mounted) return;
+
+        setState(() {
+          _hasUnreadProfessorMessages = hayNoLeidos;
+        });
+      }
+    } catch (e) {
+      print('Error cargando notificaciones: $e');
+    }
+  }
+
+  void _validarTokenAlIniciar() async {
+    if (_tokenValidado || widget.token == null) return;
+
+    _tokenValidado = true;
+
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    final tokenService = TokenService();
+    final esValido = await tokenService.validateToken(widget.token!);
+
+    if (!esValido && mounted) {
+      _showSnackBar('Token inválido o expirado');
+
+      await TokenStorage.clearToken();
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const SignInPage()),
+        (_) => false,
+      );
+    }
+  }
 
   String _mapTarjeta(String t) {
     switch (t) {
@@ -122,12 +177,14 @@ void _validarTokenAlIniciar() async {
     }
 
     final msg = msgCtrl.text.trim();
+
     if (msg.isEmpty) {
       _showSnackBar('Escribe tu mensaje antes de enviar');
       return;
     }
 
     if (_sending) return;
+
     setState(() => _sending = true);
 
     final url = Uri.parse('$_baseUrl/api/conversaciones');
@@ -141,58 +198,26 @@ void _validarTokenAlIniciar() async {
       },
       "conversacion": {
         "mensajes": [
-          {
-            "emisor": "alumno",
-            "mensaje": msg,
-            "fecha": _getCurrentDate(),
-          }
-        ]
-      }
+          {"emisor": "alumno", "mensaje": msg, "fecha": _getCurrentDate()},
+        ],
+      },
     };
 
     try {
-      print('🚀 Antes del http.post');
       final response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(body),
       );
-      print('✅ Después del http.post');
-      print('📥 Status code: ${response.statusCode}');
-      print('📥 Body: ${response.body}');
-/*
-      if (!mounted) return;
+
+      print('Status code: ${response.statusCode}');
+      print('Body: ${response.body}');
 
       if (response.statusCode == 201) {
-        msgCtrl.clear();
-        groupCtrl.clear();
-        setState(() {
-          curso = null;
-          topic = null;
-          _sending = false;
-        });
-        
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const MessageSent()),
-        );
-*/      
-        print('🔍 Checking mounted: $mounted');
-        if (response.statusCode == 201) {
-        print('✅ Navegando a MessageSent...');
-        /*
-        // 1. PRIMERO navegar (con el contexto actual)
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const MessageSent()),
-        ); */
-        
-     //   await Future.delayed(const Duration(milliseconds: 100));
-
-        // 2. DESPUÉS de regresar, limpiar (si el widget sigue montado)
         if (mounted) {
           msgCtrl.clear();
           groupCtrl.clear();
+
           setState(() {
             curso = null;
             topic = null;
@@ -201,23 +226,25 @@ void _validarTokenAlIniciar() async {
         }
 
         if (mounted) {
-          print('🧭 Antes del Navigator.push');
-          Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(builder: (_) => const MessageSent()),
-          );
-          print('🧭 Después del Navigator.push');
+          Navigator.of(
+            context,
+            rootNavigator: true,
+          ).push(MaterialPageRoute(builder: (_) => const MessageSent()));
         }
-        
-        return; // Importante: salir para no ejecutar el setState de abajo
+
+        return;
       } else if (response.statusCode == 401) {
-        if (!mounted) return; //Por el cambio en la lógica
+        if (!mounted) return;
         _showSnackBar('Token inválido o expirado');
         _logout();
       } else {
-        if (!mounted) return; //Por el cambio en la lógica
+        if (!mounted) return;
+
         String errorMsg = 'Error al enviar';
+
         try {
           final decoded = jsonDecode(response.body);
+
           if (decoded is Map) {
             if (decoded["error"] != null) {
               errorMsg = decoded["error"].toString();
@@ -226,36 +253,51 @@ void _validarTokenAlIniciar() async {
             }
           }
         } catch (_) {}
+
         _showSnackBar(errorMsg);
+
         setState(() => _sending = false);
       }
     } catch (e) {
-      print('❌ Excepción: $e');
+      print('Excepción: $e');
+
       if (!mounted) return;
+
       _showSnackBar('No se pudo conectar con el servidor');
+
       setState(() => _sending = false);
     }
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _push(Widget page) =>
-      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  void _push(Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
 
-  void _logout() async{
-    await TokenStorage.clearToken(); // Eliminar el token del móvil
+  void _logout() async {
+    await TokenStorage.clearToken();
+
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (_) => const SignInPage()),
+      MaterialPageRoute(builder: (_) => const HomePage()),
       (_) => false,
     );
   }
 
-  void _notifications() => _push(const ChatHistoryStudent());
+  void _notifications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ChatHistoryStudent()),
+    );
+
+    _cargarNotificaciones();
+  }
+
   void _about() => _push(const AboutUs());
 
   @override
@@ -272,15 +314,12 @@ void _validarTokenAlIniciar() async {
         leadingWidth: 56,
         leading: Padding(
           padding: const EdgeInsets.only(left: 8),
-          child: MenuPopup(
-            onLogout: _logout,
-            onAbout: _about,
-          ),
+          child: MenuPopup(onLogout: _logout, onAbout: _about),
         ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset('assets/images/quiethelp_logo.png', height: 28),
+            SvgPicture.asset('assets/images/quiethelp_logo.svg', height: 28),
             const SizedBox(width: 8),
             const Text(
               'QuietHelp',
@@ -291,9 +330,27 @@ void _validarTokenAlIniciar() async {
         actions: [
           SizedBox(
             width: 56,
-            child: IconButton(
-              onPressed: _notifications,
-              icon: const Icon(Icons.notifications_none_outlined),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  onPressed: _notifications,
+                  icon: const Icon(Icons.notifications_none_outlined),
+                ),
+                if (_hasUnreadProfessorMessages)
+                  Positioned(
+                    top: 14,
+                    right: 14,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -301,6 +358,7 @@ void _validarTokenAlIniciar() async {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final pad = constraints.maxWidth >= 900 ? 64.0 : 22.0;
+
           return SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(pad, 14, pad, 18),
             child: Center(
@@ -371,204 +429,209 @@ void _validarTokenAlIniciar() async {
     );
   }
 
-  Widget _buildHeader() => Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: const BoxDecoration(
-              color: Colors.black,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.chat_bubble_outline,
-              color: Colors.white,
-              size: 20,
-            ),
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: const BoxDecoration(
+            color: Colors.black,
+            shape: BoxShape.circle,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'Envía tu mensaje',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Nadie sabrá que eres tú',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black45,
-                  ),
-                ),
-              ],
-            ),
+          child: const Icon(
+            Icons.chat_bubble_outline,
+            color: Colors.white,
+            size: 20,
           ),
-        ],
-      );
-
-  Widget _buildLabel(String text, {bool required = false}) => Row(
-        children: [
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: Colors.black.withValues(alpha: 0.75),
-            ),
-          ),
-          if (required) ...[
-            const SizedBox(width: 4),
-            const Text(
-              '*',
-              style: TextStyle(
-                color: AppColors.errorRed,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ],
-      );
-
-  Widget _buildCourseGroupRow() => Row(
-        children: [
-          Expanded(
-            child: CustomDropdown(
-              hint: 'Curso',
-              value: curso,
-              items: AppData.courses,
-              onChanged: (v) => setState(() => curso = v),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: CustomTextField(
-              hint: 'Grupo',
-              controller: groupCtrl,
-              maxLength: 40,
-            ),
-          ),
-        ],
-      );
-
-  Widget _buildTopicsGrid() => LayoutBuilder(
-        builder: (context, constraints) {
-          final w = (constraints.maxWidth - 10) / 2;
-          return Wrap(
-            spacing: 10,
-            runSpacing: 10,
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TopicTile(
-                width: w,
-                height: 64,
-                selected: topic == 'bullying',
-                icon: Icons.shield_outlined,
-                label: 'Bullying',
-                onTap: () => setState(() => topic = 'bullying'),
+              Text(
+                'Envía tu mensaje',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
-              TopicTile(
-                width: w,
-                height: 64,
-                selected: topic == 'academica',
-                icon: Icons.school_outlined,
-                label: 'Dificultad académica',
-                onTap: () => setState(() => topic = 'academica'),
-              ),
-              TopicTile(
-                width: w,
-                height: 64,
-                selected: topic == 'emociones',
-                icon: Icons.favorite_border,
-                label: 'Problemas emocionales',
-                onTap: () => setState(() => topic = 'emociones'),
-              ),
-              TopicTile(
-                width: w,
-                height: 64,
-                selected: topic == 'otro',
-                icon: Icons.more_horiz,
-                label: 'Otro',
-                onTap: () => setState(() => topic = 'otro'),
+              SizedBox(height: 2),
+              Text(
+                'Nadie sabrá que eres tú',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black45,
+                ),
               ),
             ],
-          );
-        },
-      );
-
-  Widget _buildSendButton() => SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton.icon(
-          onPressed: _isValid ? _send : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _isValid 
-                ? AppColors.teal 
-                : AppColors.teal.withValues(alpha: 0.45),
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          icon: _sending
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Icon(Icons.send_rounded, size: 18),
-          label: Text(
-            _sending ? 'Enviando...' : 'Enviar mensaje anónimo',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
           ),
         ),
-      );
+      ],
+    );
+  }
 
-  Widget _buildSecurityCard() => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        decoration: BoxDecoration(
-          color: AppColors.tealSoft,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+  Widget _buildLabel(String text, {bool required = false}) {
+    return Row(
+      children: [
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: Colors.black.withValues(alpha: 0.75),
+          ),
         ),
-        child: Column(
-          children: const [
-            Icon(
-              Icons.verified_user_outlined,
-              size: 26,
-              color: AppColors.teal,
+        if (required) ...[
+          const SizedBox(width: 4),
+          const Text(
+            '*',
+            style: TextStyle(
+              color: AppColors.errorRed,
+              fontWeight: FontWeight.w900,
             ),
-            SizedBox(height: 10),
-            Text(
-              'Tu seguridad es nuestra prioridad',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCourseGroupRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: CustomDropdown(
+            hint: 'Curso',
+            value: curso,
+            items: AppData.courses,
+            onChanged: (v) => setState(() => curso = v),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: CustomTextField(
+            hint: 'Grupo',
+            controller: groupCtrl,
+            maxLength: 40,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopicsGrid() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = (constraints.maxWidth - 10) / 2;
+
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            TopicTile(
+              width: w,
+              height: 64,
+              selected: topic == 'bullying',
+              icon: Icons.shield_outlined,
+              label: 'Bullying',
+              onTap: () => setState(() => topic = 'bullying'),
             ),
-            SizedBox(height: 8),
-            Text(
-              'QuietHelp fue creado para que puedas pedir ayuda sin miedo.\n'
-              'Cada mensaje es tratado con el máximo cuidado y confidencialidad por\n'
-              'profesionales capacitados.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-                color: Colors.black45,
-              ),
+            TopicTile(
+              width: w,
+              height: 64,
+              selected: topic == 'academica',
+              icon: Icons.school_outlined,
+              label: 'Dificultad académica',
+              onTap: () => setState(() => topic = 'academica'),
+            ),
+            TopicTile(
+              width: w,
+              height: 64,
+              selected: topic == 'emociones',
+              icon: Icons.favorite_border,
+              label: 'Problemas emocionales',
+              onTap: () => setState(() => topic = 'emociones'),
+            ),
+            TopicTile(
+              width: w,
+              height: 64,
+              selected: topic == 'otro',
+              icon: Icons.more_horiz,
+              label: 'Otro',
+              onTap: () => setState(() => topic = 'otro'),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSendButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton.icon(
+        onPressed: _isValid ? _send : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _isValid
+              ? AppColors.teal
+              : AppColors.teal.withValues(alpha: 0.45),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
-      );
-      
+        icon: _sending
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.send_rounded, size: 18),
+        label: Text(
+          _sending ? 'Enviando...' : 'Enviar mensaje anónimo',
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSecurityCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: AppColors.tealSoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+      ),
+      child: const Column(
+        children: [
+          Icon(Icons.verified_user_outlined, size: 26, color: AppColors.teal),
+          SizedBox(height: 10),
+          Text(
+            'Tu seguridad es nuestra prioridad',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'QuietHelp fue creado para que puedas pedir ayuda sin miedo.\n'
+            'Cada mensaje es tratado con el máximo cuidado y confidencialidad por\n'
+            'profesionales capacitados.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11.5,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+              color: Colors.black45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

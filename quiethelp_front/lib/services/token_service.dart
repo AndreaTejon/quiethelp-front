@@ -1,9 +1,15 @@
-// lib/services/token_service.dart
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class TokenService {
-  static const String _baseUrl = 'http://10.0.2.2:8080';
+  static String get _baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:8080';
+    }
+    return 'http://10.0.2.2:8080';
+  }
+
   static bool _isValidando = false;
   
   Future<bool> validateToken(String token) async {

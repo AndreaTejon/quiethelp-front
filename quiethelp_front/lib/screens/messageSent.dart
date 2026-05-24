@@ -26,7 +26,7 @@ class MessageSent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Image.asset(
-              'assets/images/quiethelp_logo.png',
+              'assets/images/quiethelp_logo.svg',
               height: 28,
               fit: BoxFit.contain,
             ),
