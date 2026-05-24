@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'studentHomePage.dart';
 import 'chatHistoryStudent.dart';
 import 'aboutUs.dart';
@@ -25,11 +26,11 @@ class MessageSent extends StatelessWidget {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset(
-              'assets/images/quiethelp_logo.svg',
-              height: 28,
-              fit: BoxFit.contain,
-            ),
+          SvgPicture.asset(
+            'assets/images/quiethelp_logo.svg',
+            height: 28,
+            fit: BoxFit.contain,
+          ),
             const SizedBox(width: 8),
             const Text(
               'QuietHelp',
