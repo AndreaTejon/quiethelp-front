@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:quiethelp_front/screens/homePage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-
 import '../constants/app_theme.dart';
 import '../widgets/custom_dropdown.dart';
 import '../widgets/custom_text_field.dart';
@@ -49,11 +48,12 @@ class _StudentHomePageState extends State<StudentHomePage> {
   Timer? _notificationTimer;
 
   String get _baseUrl {
-  if (kIsWeb) {
-    return 'http://localhost:8080';
+    if (kIsWeb) {
+      return 'http://localhost:8080';
+    }
+    return 'http://10.0.2.2:8080';
   }
-  return 'http://10.0.2.2:8080';
-}
+
   @override
   void initState() {
     super.initState();
@@ -226,10 +226,14 @@ class _StudentHomePageState extends State<StudentHomePage> {
         }
 
         if (mounted) {
-          Navigator.of(
-            context,
-            rootNavigator: true,
-          ).push(MaterialPageRoute(builder: (_) => const MessageSent()));
+          final decoded = jsonDecode(response.body);
+          final urgente =
+              decoded["conversacion"]?["urgente"] == true ||
+              decoded["emisor"]?["urgente"] == true;
+
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(builder: (_) => MessageSent(urgente: urgente)),
+          );
         }
 
         return;

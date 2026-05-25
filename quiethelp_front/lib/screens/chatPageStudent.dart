@@ -1,5 +1,3 @@
-// chatPageStudent.dart
-
 import 'dart:async';
 import 'dart:convert';
 
@@ -66,6 +64,9 @@ class ChatPageStudent extends StatefulWidget {
 class _ChatPageStudentState extends State<ChatPageStudent> {
   static const bgSoft = Color(0xFFEFF7F6);
 
+  bool _esUrgente = false;
+  bool _mostrarAvisoUrgente = false;
+
   String get _baseUrl {
     if (kIsWeb) {
       return 'http://localhost:8080';
@@ -109,7 +110,6 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
   void dispose() {
     _pollingTimer?.cancel();
     _otherChatsNotificationTimer?.cancel();
-
     _ctrl.dispose();
     super.dispose();
   }
@@ -139,13 +139,10 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
   Future<void> _marcarMensajesProfesorComoLeidos() async {
     final uri = Uri.parse(
       '$_baseUrl/api/conversaciones/${widget.conversacionId}/leidos',
-    ).replace(queryParameters: {
-      'emisor': 'profesor',
-    });
+    ).replace(queryParameters: {'emisor': 'profesor'});
 
     try {
       final response = await http.post(uri);
-
       print('Marcando leídos profesor: ${response.statusCode}');
       print('Respuesta: ${response.body}');
     } catch (e) {
@@ -160,9 +157,7 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
 
     final uri = Uri.parse(
       '$_baseUrl/api/conversaciones/alumno',
-    ).replace(queryParameters: {
-      'token': widget.token,
-    });
+    ).replace(queryParameters: {'token': widget.token});
 
     try {
       final response = await http.get(uri);
@@ -204,9 +199,7 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
 
     final uri = Uri.parse(
       '$_baseUrl/api/conversaciones/alumno/${widget.conversacionId}',
-    ).replace(queryParameters: {
-      'token': widget.token,
-    });
+    ).replace(queryParameters: {'token': widget.token});
 
     print('Cargando conversación alumno: $uri');
 
@@ -215,6 +208,9 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
+
+        final urgenteDetectado =
+            json['conversacion']?['urgente'] == true || json['urgente'] == true;
 
         final mensajesList = <_MessageResponse>[];
 
@@ -244,8 +240,18 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
 
         if (!mounted) return;
 
+        final antesEraUrgente = _esUrgente;
+
         setState(() {
           _mensajes = mensajesList;
+
+          _esUrgente = urgenteDetectado;
+
+          // Si acaba de pasar a urgente mientras estás dentro
+          if (!antesEraUrgente && urgenteDetectado) {
+            _mostrarAvisoUrgente = true;
+          }
+
           _isLoading = false;
           _error = null;
         });
@@ -295,16 +301,16 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
       final response = await http.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'token': widget.token,
-          'contenido': contenido,
-        }),
+        body: jsonEncode({'token': widget.token, 'contenido': contenido}),
       );
 
       if (response.statusCode == 200) {
         _ctrl.clear();
 
         await _cargarConversacion(silencioso: true);
+        setState(() {
+          _isLoading = false;
+        });
 
         print('Respuesta enviada');
       } else {
@@ -315,11 +321,9 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error al enviar mensaje'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Error al enviar mensaje')));
     } finally {
       if (mounted) {
         setState(() {
@@ -332,9 +336,7 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
   void _goToChatHistory() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => const ChatHistoryStudent(),
-      ),
+      MaterialPageRoute(builder: (_) => const ChatHistoryStudent()),
     );
   }
 
@@ -405,9 +407,7 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
           final horizontalPadding = isDesktop ? 64.0 : 22.0;
 
           if (_isLoading && _mensajes.isEmpty) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (_error != null && _mensajes.isEmpty) {
@@ -491,6 +491,51 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
                         ),
                         child: Column(
                           children: [
+                            if (_mostrarAvisoUrgente) ...[
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF4F4),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: Colors.redAccent,
+                                    width: 1.2,
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Si estás pasando por un momento muy difícil y sientes que no puedes más, no te quedes solo/a.\n\n📞 Teléfono de la Esperanza: 717 003 717\n📞 Línea 024: Atención a la conducta suicida\n🚨 Emergencia inmediata: 112',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          height: 1.45,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.redAccent,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _mostrarAvisoUrgente = false;
+                                        });
+                                      },
+                                      icon: const Icon(
+                                        Icons.close_rounded,
+                                        color: Colors.redAccent,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             ..._mensajes.map((msg) {
                               final esAlumno = msg.emisor == 'alumno';
 
@@ -570,10 +615,7 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(999),
@@ -585,8 +627,8 @@ class _ChatPageStudentState extends State<ChatPageStudent> {
             widget.estado == 'EN_REVISION'
                 ? Icons.chat_bubble_outline
                 : widget.estado == 'RESUELTO'
-                    ? Icons.check_circle_outline
-                    : Icons.access_time,
+                ? Icons.check_circle_outline
+                : Icons.access_time,
             size: 14,
             color: textColor,
           ),
@@ -609,21 +651,14 @@ class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const _MetaChip({
-    required this.icon,
-    required this.text,
-  });
+  const _MetaChip({required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 14,
-          color: Colors.black.withOpacity(0.35),
-        ),
+        Icon(icon, size: 14, color: Colors.black.withOpacity(0.35)),
         const SizedBox(width: 6),
         Text(
           text,
@@ -642,10 +677,7 @@ class _Bubble extends StatelessWidget {
   final bool fromStudent;
   final String text;
 
-  const _Bubble({
-    required this.fromStudent,
-    required this.text,
-  });
+  const _Bubble({required this.fromStudent, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -653,10 +685,7 @@ class _Bubble extends StatelessWidget {
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 340),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(18),
@@ -693,9 +722,7 @@ class _InputBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.black.withOpacity(0.08),
-        ),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
       ),
       child: Row(
         children: [

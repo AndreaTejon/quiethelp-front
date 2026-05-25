@@ -10,7 +10,6 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'dart:convert';
 
-import '../models/conversacion_response.dart';
 import '../models/message_response.dart';
 
 class ChatProfessorInitialPage extends StatefulWidget {
