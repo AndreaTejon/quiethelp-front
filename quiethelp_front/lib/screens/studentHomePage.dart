@@ -1,4 +1,4 @@
-import 'dart:async'; // polling: permite crear un Timer que ejecuta la carga de notificaciones cada cierto tiempo
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -44,7 +44,6 @@ class _StudentHomePageState extends State<StudentHomePage> {
   bool _tokenValidado = false;
   bool _hasUnreadProfessorMessages = false;
 
-  // polling: guarda el temporizador para consultar notificaciones sin recargar la página
   Timer? _notificationTimer;
 
   String get _baseUrl {
@@ -64,7 +63,6 @@ class _StudentHomePageState extends State<StudentHomePage> {
       _validarTokenAlIniciar();
       _cargarNotificaciones();
 
-      // polling: consulta el backend cada 5 segundos para actualizar la campanita automáticamente
       _notificationTimer = Timer.periodic(
         const Duration(seconds: 5),
         (_) => _cargarNotificaciones(),
@@ -74,7 +72,6 @@ class _StudentHomePageState extends State<StudentHomePage> {
 
   @override
   void dispose() {
-    // polling: cancela el temporizador al salir de la página para evitar errores o peticiones innecesarias
     _notificationTimer?.cancel();
 
     msgCtrl.removeListener(_onMessageChanged);
@@ -239,39 +236,138 @@ class _StudentHomePageState extends State<StudentHomePage> {
         return;
       } else if (response.statusCode == 401) {
         if (!mounted) return;
+
+        setState(() => _sending = false);
+
         _showSnackBar('Token inválido o expirado');
         _logout();
       } else {
         if (!mounted) return;
 
-        String errorMsg = 'Error al enviar';
+        String errorMsg = 'Error al enviar el mensaje';
 
         try {
           final decoded = jsonDecode(response.body);
 
-          if (decoded is Map) {
-            if (decoded["error"] != null) {
-              errorMsg = decoded["error"].toString();
-            } else if (decoded["mensaje"] != null) {
-              errorMsg = decoded["mensaje"].toString();
-            }
+          if (decoded is Map && decoded["mensaje"] != null) {
+            errorMsg = decoded["mensaje"].toString();
           }
         } catch (_) {}
 
-        _showSnackBar(errorMsg);
-
         setState(() => _sending = false);
+
+        _showErrorDialog(errorMsg);
       }
     } catch (e) {
       print('Excepción: $e');
 
       if (!mounted) return;
 
-      _showSnackBar('No se pudo conectar con el servidor');
-
       setState(() => _sending = false);
+
+      _showErrorDialog(
+        'No se pudo conectar con el servidor. ¿Quieres intentarlo de nuevo?',
+      );
     }
   }
+
+  void _showErrorDialog(String message) {
+  if (!mounted) return;
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 28),
+            padding: const EdgeInsets.fromLTRB(24, 46, 24, 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: AppColors.errorRed,
+                  size: 28,
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.grey.shade200,
+                        foregroundColor: Colors.black87,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('Volver'),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _send();
+                      },
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.grey.shade200,
+                        foregroundColor: Colors.black87,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(
