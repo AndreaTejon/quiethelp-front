@@ -9,6 +9,7 @@ class MessageCard extends StatelessWidget {
   final VoidCallback onReview;
   final bool unread;
   final String statusLabel;
+  final bool cadenaVerificada;  // Blockchain: indica si la cadena está verificada
 
   const MessageCard({
     super.key,
@@ -19,6 +20,7 @@ class MessageCard extends StatelessWidget {
     required this.onReview,
     this.unread = false,
     this.statusLabel = 'Pendiente',
+    this.cadenaVerificada = false,  // Por defecto false
   });
 
   @override
@@ -48,6 +50,8 @@ class MessageCard extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (unread) const _UnreadDot(),
+              // 🆕 Escudo de blockchain (verificación de integridad)
+              _BlockchainShield(verificada: cadenaVerificada),
               _CategoryTag(category),
               if (urgent) const _UrgentTag(),
               _StatusTag(statusLabel),
@@ -111,6 +115,7 @@ class MessageCard extends StatelessWidget {
   }
 }
 
+// Punto azul para mensajes no leídos
 class _UnreadDot extends StatelessWidget {
   const _UnreadDot();
 
@@ -135,6 +140,7 @@ class _UnreadDot extends StatelessWidget {
   }
 }
 
+// Etiqueta de categoría (Bullying, Académico, etc.)
 class _CategoryTag extends StatelessWidget {
   final String text;
 
@@ -161,6 +167,7 @@ class _CategoryTag extends StatelessWidget {
   }
 }
 
+// Etiqueta "Urgente" (roja)
 class _UrgentTag extends StatelessWidget {
   const _UrgentTag();
 
@@ -186,6 +193,7 @@ class _UrgentTag extends StatelessWidget {
   }
 }
 
+// Etiqueta de estado (Pendiente, En revisión, Resuelto)
 class _StatusTag extends StatelessWidget {
   final String text;
 
@@ -223,6 +231,49 @@ class _StatusTag extends StatelessWidget {
           fontWeight: FontWeight.w900,
           color: fg,
         ),
+      ),
+    );
+  }
+}
+
+// ESCUDO DE BLOCKCHAIN (verificación de integridad)
+class _BlockchainShield extends StatelessWidget {
+  final bool verificada;
+
+  const _BlockchainShield({required this.verificada});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: verificada 
+            ? Colors.green.withOpacity(0.1) 
+            : Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: verificada ? Colors.green : Colors.grey,
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.shield,
+            size: 14,
+            color: verificada ? Colors.green : Colors.grey,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            verificada ? 'Bloque verificado' : 'Sin verificar',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: verificada ? Colors.green : Colors.grey,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -10,6 +10,7 @@ class ConversacionResponse {
   final String? fechaResolucion;
   final EmisorData emisor;
   final List<MessageResponse> mensajes;
+  final bool cadenaVerificada;
 
   ConversacionResponse({
     required this.id,
@@ -21,6 +22,7 @@ class ConversacionResponse {
     this.fechaResolucion,
     required this.emisor,
     required this.mensajes,
+    required this.cadenaVerificada
   });
 
   factory ConversacionResponse.fromJson(Map<String, dynamic> json) {
@@ -52,6 +54,7 @@ class ConversacionResponse {
       fechaResolucion: conversacionJson['fechaResolucion']?.toString(),
       emisor: EmisorData.fromJson(emisorJson),
       mensajes: mensajesList,
+      cadenaVerificada: json['conversacion']?['cadenaVerificada'] ?? false,
     );
   }
 

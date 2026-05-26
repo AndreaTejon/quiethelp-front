@@ -72,9 +72,7 @@ class _MessageSentState extends State<MessageSent> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ChatHistoryStudent(
-                        token: widget.token,
-                      ),
+                      builder: (_) => ChatHistoryStudent(),
                     ),
                   );
                 },

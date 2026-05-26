@@ -229,7 +229,9 @@ class _StudentHomePageState extends State<StudentHomePage> {
               decoded["emisor"]?["urgente"] == true;
 
           Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(builder: (_) => MessageSent(urgente: urgente)),
+            MaterialPageRoute(builder: (_) => MessageSent(
+              token: widget.token!,
+              urgente: urgente)),
           );
         }
 

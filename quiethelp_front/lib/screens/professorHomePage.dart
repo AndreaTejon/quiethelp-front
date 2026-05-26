@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:quiethelp_front/screens/homePage.dart';
 import '../constants/app_theme.dart';
@@ -178,11 +179,11 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
           .toList();
 
       // Orden: la conversación con el mensaje más reciente aparece arriba
+      // Dentro de _cargarConversaciones(), después de obtener las conversaciones
       nuevasConversaciones.sort((a, b) {
         final fechaA = _fechaMasRecienteConversacion(a);
         final fechaB = _fechaMasRecienteConversacion(b);
-
-        return fechaB.compareTo(fechaA);
+        return fechaB.compareTo(fechaA); // ← Más reciente PRIMERO (arriba)
       });
 
       if (!mounted) return;
@@ -198,21 +199,35 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     }
   }
 
-  // Orden: busca la fecha más reciente entre todos los mensajes de una conversación
-  DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
-    DateTime fechaMasReciente =
-        DateTime.tryParse(conversacion.fechaInicio ?? '') ?? DateTime(2000);
-
-    for (final mensaje in conversacion.mensajes) {
-      final fechaMensaje = DateTime.tryParse(mensaje.fecha);
-
-      if (fechaMensaje != null && fechaMensaje.isAfter(fechaMasReciente)) {
+// Orden: busca la fecha más reciente entre todos los mensajes de una conversación
+DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
+  final formatter = DateFormat('dd/MM/yyyy HH:mm');
+  
+  DateTime fechaMasReciente = DateTime(2000);
+  
+  // Parsear fechaInicio
+  if (conversacion.fechaInicio != null && conversacion.fechaInicio!.isNotEmpty) {
+    try {
+      fechaMasReciente = formatter.parse(conversacion.fechaInicio!);
+    } catch (e) {
+      print('Error parseando fechaInicio: $e');
+    }
+  }
+  
+  // Buscar la fecha más reciente entre todos los mensajes
+  for (final mensaje in conversacion.mensajes) {
+    try {
+      final fechaMensaje = formatter.parse(mensaje.fecha);
+      if (fechaMensaje.isAfter(fechaMasReciente)) {
         fechaMasReciente = fechaMensaje;
       }
+    } catch (e) {
+      print('Error parseando fecha mensaje: $e');
     }
-
-    return fechaMasReciente;
   }
+  
+  return fechaMasReciente;
+}
 
   Future<void> _cargarResumen() async {
     final url = '$_baseUrl/api/conversaciones/resumen';
@@ -463,6 +478,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
             received: 'Recibido: ${conv.fechaInicio ?? ''}',
             statusLabel: _estadoLabel(conv.estado),
             unread: unread,
+            cadenaVerificada: conv.cadenaVerificada,
             onReview: () => _navigateToChat(conv),
           ),
           const SizedBox(height: 12),
