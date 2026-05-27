@@ -23,7 +23,7 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
 
   String get _baseUrl {
     if (kIsWeb) {
-      return 'quiethelp-back.railway.internal';
+      return 'https://quiethelp-back-production.up.railway.app';
     }
     return 'http://10.0.2.2:8080';
   }
