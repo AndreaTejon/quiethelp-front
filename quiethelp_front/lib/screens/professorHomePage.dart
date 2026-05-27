@@ -44,7 +44,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
 
   String get _baseUrl {
     if (kIsWeb) {
-      return 'http://localhost:8080';
+      return 'quiethelp-back.railway.internal';
     }
     return 'http://10.0.2.2:8080';
   }
