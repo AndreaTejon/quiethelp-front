@@ -288,6 +288,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
         children: [
           Container(
             width: double.infinity,
+              constraints: const BoxConstraints(maxWidth: 450),
             margin: const EdgeInsets.only(top: 28),
             padding: const EdgeInsets.fromLTRB(24, 46, 24, 24),
             decoration: BoxDecoration(
@@ -588,7 +589,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
           const Text(
             '*',
             style: TextStyle(
-              color: AppColors.errorRed,
+              color: Color(0xFFFF5A5F),
               fontWeight: FontWeight.w900,
             ),
           ),

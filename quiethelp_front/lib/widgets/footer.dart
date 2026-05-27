@@ -22,17 +22,20 @@ class AppFooter extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        GestureDetector(
-          onTap: onAbout,
-          child: const Text(
-            '¿Quiénes somos?',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w800,
-              color: AppColors.teal,
-            ),
-          ),
-        ),
+        MouseRegion(
+  cursor: SystemMouseCursors.click,
+  child: GestureDetector(
+    onTap: onAbout,
+    child: const Text(
+      '¿Quiénes somos?',
+      style: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w800,
+        color: AppColors.teal,
+      ),
+    ),
+  ),
+)
       ],
     );
   }

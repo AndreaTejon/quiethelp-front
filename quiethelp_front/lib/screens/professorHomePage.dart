@@ -32,6 +32,7 @@ class ProfessorHomePage extends StatefulWidget {
 class _ProfessorHomePageState extends State<ProfessorHomePage> {
   String _category = 'Todos';
   int _tabIndex = 0;
+  bool _soloUrgentes = false;
   List<ConversacionResponse> _conversaciones = [];
   bool _hasUnreadInReview = false;
   DashboardResumen? _resumen;
@@ -174,16 +175,22 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     if (response.statusCode == 200) {
       final List<dynamic> jsonList = jsonDecode(response.body);
 
-      final nuevasConversaciones = jsonList
+      var nuevasConversaciones = jsonList
           .map((json) => ConversacionResponse.fromJson(json))
           .toList();
+
+      if (_soloUrgentes) {
+        nuevasConversaciones = nuevasConversaciones
+            .where((conv) => conv.emisor.urgente == true)
+            .toList();
+      }
 
       // Orden: la conversación con el mensaje más reciente aparece arriba
       // Dentro de _cargarConversaciones(), después de obtener las conversaciones
       nuevasConversaciones.sort((a, b) {
         final fechaA = _fechaMasRecienteConversacion(a);
         final fechaB = _fechaMasRecienteConversacion(b);
-        return fechaB.compareTo(fechaA); // ← Más reciente PRIMERO (arriba)
+        return fechaB.compareTo(fechaA); // mas reciente PRIMERO (arriba)
       });
 
       if (!mounted) return;
@@ -199,35 +206,36 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     }
   }
 
-// Orden: busca la fecha más reciente entre todos los mensajes de una conversación
-DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
-  final formatter = DateFormat('dd/MM/yyyy HH:mm');
-  
-  DateTime fechaMasReciente = DateTime(2000);
-  
-  // Parsear fechaInicio
-  if (conversacion.fechaInicio != null && conversacion.fechaInicio!.isNotEmpty) {
-    try {
-      fechaMasReciente = formatter.parse(conversacion.fechaInicio!);
-    } catch (e) {
-      print('Error parseando fechaInicio: $e');
-    }
-  }
-  
-  // Buscar la fecha más reciente entre todos los mensajes
-  for (final mensaje in conversacion.mensajes) {
-    try {
-      final fechaMensaje = formatter.parse(mensaje.fecha);
-      if (fechaMensaje.isAfter(fechaMasReciente)) {
-        fechaMasReciente = fechaMensaje;
+  // Orden: busca la fecha más reciente entre todos los mensajes de una conversación
+  DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
+    final formatter = DateFormat('dd/MM/yyyy HH:mm');
+
+    DateTime fechaMasReciente = DateTime(2000);
+
+    // Parsear fechaInicio
+    if (conversacion.fechaInicio != null &&
+        conversacion.fechaInicio!.isNotEmpty) {
+      try {
+        fechaMasReciente = formatter.parse(conversacion.fechaInicio!);
+      } catch (e) {
+        print('Error parseando fechaInicio: $e');
       }
-    } catch (e) {
-      print('Error parseando fecha mensaje: $e');
     }
+
+    // Buscar la fecha más reciente entre todos los mensajes
+    for (final mensaje in conversacion.mensajes) {
+      try {
+        final fechaMensaje = formatter.parse(mensaje.fecha);
+        if (fechaMensaje.isAfter(fechaMasReciente)) {
+          fechaMasReciente = fechaMensaje;
+        }
+      } catch (e) {
+        print('Error parseando fecha mensaje: $e');
+      }
+    }
+
+    return fechaMasReciente;
   }
-  
-  return fechaMasReciente;
-}
 
   Future<void> _cargarResumen() async {
     final url = '$_baseUrl/api/conversaciones/resumen';
@@ -391,9 +399,17 @@ DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
           resueltos: _resumen?.resueltos ?? 0,
           urgentes: _resumen?.urgentes ?? 0,
           onTap: (i) {
-            setState(() => _tabIndex = i);
-            _cargarConversaciones();
-          },
+  setState(() {
+    if (i == 3) {
+      _soloUrgentes = true;
+    } else {
+      _tabIndex = i;
+      _soloUrgentes = false;
+    }
+  });
+
+  _cargarConversaciones();
+},
         ),
         const SizedBox(height: 28),
         CategoryFilter(
@@ -408,9 +424,12 @@ DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
           index: _tabIndex,
           hasUnreadInReview: _hasUnreadInReview,
           onChanged: (i) {
-            setState(() => _tabIndex = i);
-            _cargarConversaciones();
-          },
+  setState(() {
+    _tabIndex = i;
+  });
+
+  _cargarConversaciones();
+},
         ),
         const SizedBox(height: 32),
         ..._buildMessageList(),

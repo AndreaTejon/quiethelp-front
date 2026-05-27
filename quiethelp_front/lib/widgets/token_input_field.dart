@@ -1,9 +1,8 @@
-// lib/widgets/token_input_field.dart
 import 'package:flutter/material.dart';
 
 class TokenInputField extends StatelessWidget {
   final TextEditingController controller;
-  final VoidCallback onSubmitted; // Cambiado a VoidCallback
+  final VoidCallback onSubmitted;
 
   const TokenInputField({
     super.key,

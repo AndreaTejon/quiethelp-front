@@ -76,7 +76,6 @@ class _CustomTextFieldState extends State<CustomTextField> {
       );
     }
 
-    // Campo de una línea con FocusNode para controlar el borde
     return Container(
       height: 44,
       decoration: BoxDecoration(

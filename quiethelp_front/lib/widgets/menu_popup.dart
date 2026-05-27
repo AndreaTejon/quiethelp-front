@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../constants/app_theme.dart';  // Subir un nivel
+import '../constants/app_theme.dart';
 
 enum MenuOption { about, logout }
 
@@ -12,6 +12,7 @@ class MenuPopup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<MenuOption>(
+        tooltip: '',
       icon: const Icon(Icons.keyboard_arrow_down_rounded),
       offset: const Offset(0, 52),
       color: Colors.white,

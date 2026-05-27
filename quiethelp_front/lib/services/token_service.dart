@@ -14,21 +14,21 @@ class TokenService {
   
   Future<bool> validateToken(String token) async {
     if(_isValidando) {
-      print('⏳ Validación en curso, esperando...');
+      print('Validación en curso, esperando...');
       for(int i = 0; i < 10; i++) {
         await Future.delayed(const Duration(milliseconds: 300));
         if(!_isValidando) break;
       }
       if(_isValidando) {
-        print('❌ Timeout: validación previa no completada');
-        return false; // No asumir éxito
+        print('Timeout: validación previa no completada');
+        return false;
       }
     }
     _isValidando = true;
-    print('🔍 Validando token: $token');
+    print('Validando token: $token');
     
     try {
-      // Intentamos crear una conversación mínima para validar el token
+      // se intenta crear una conversación mínima para validar el token
       final url = Uri.parse('$_baseUrl/api/conversaciones');
       
       final body = {
@@ -38,7 +38,7 @@ class TokenService {
           "mensajes": [
             {
               "emisor": "alumno",
-              "mensaje": "validación", // Mensaje corto y genérico
+              "mensaje": "validación",
             }
           ]
         }
@@ -50,7 +50,7 @@ class TokenService {
         body: jsonEncode(body),
       ).timeout(const Duration(seconds: 10));
       
-      print('📥 Status code: ${response.statusCode}');
+      print('Status code: ${response.statusCode}');
       
       // Si el token es válido, el backend responde con:
       // - 201: si todo está bien (crea conversación)
@@ -62,12 +62,12 @@ class TokenService {
       } else if (response.statusCode == 401) {
         return false; // Token inválido
       } else {
-        print('❌ Respuesta inesperada: ${response.body}');
+        print('Respuesta inesperada: ${response.body}');
         return false;
       }
       
     } catch (e) {
-      print('❌ Error de conexión: $e');
+      print('Error de conexión: $e');
       return false; // Error de conexión = token NO válido
     } finally {
       _isValidando = false;

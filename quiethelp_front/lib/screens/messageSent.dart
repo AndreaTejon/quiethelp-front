@@ -14,7 +14,7 @@ class MessageSent extends StatefulWidget {
     super.key,
     this.urgente = false,
     required this.token,
-  });
+  });   
 
   static const teal = Color(0xFF2CB9B2);
   static const bgSoft = Color(0xFFEFF7F6);

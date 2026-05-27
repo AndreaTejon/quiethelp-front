@@ -1,5 +1,3 @@
-// chatProfessorInitial.dart
-
 // polling: permite actualizar automáticamente el chat cada pocos segundos
 import 'dart:async';
 
@@ -273,26 +271,12 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
           _status = 'En revisión';
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Conversación asignada correctamente'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
         await _cargarConversacionCompleta(silencioso: true);
       } else {
         throw Exception('Error al asignar: ${response.body}');
       }
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al asignar: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      print('Error al asignar: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -323,25 +307,11 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
         setState(() {
           _status = 'Resuelto';
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Conversación marcada como resuelta'),
-            backgroundColor: Colors.green,
-          ),
-        );
       } else {
         throw Exception('Error al marcar resuelto: ${response.body}');
       }
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al marcar resuelto: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      print('Error al marcar resuelto: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -355,22 +325,10 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
     final contenido = _respuestaController.text.trim();
 
     if (contenido.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Escribe un mensaje'),
-          backgroundColor: Colors.orange,
-        ),
-      );
       return;
     }
 
     if (!_isReview) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Solo puedes responder conversaciones en revisión'),
-          backgroundColor: Colors.orange,
-        ),
-      );
       return;
     }
 
@@ -396,27 +354,11 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
         _respuestaController.clear();
 
         await _cargarConversacionCompleta(silencioso: true);
-
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Respuesta enviada'),
-            backgroundColor: Colors.green,
-          ),
-        );
       } else {
         throw Exception('Error al enviar: ${response.body}');
       }
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al enviar: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      print('Error al enviar: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -524,12 +466,61 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
                     } else if (_isReview && nuevoEstado == 'Resuelto') {
                       await _marcarResuelto();
                     } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'No se puede cambiar de $_status a $nuevoEstado',
+                      showDialog(
+                        context: context,
+                        builder: (_) => Dialog(
+                          backgroundColor: Colors.transparent,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 360),
+                            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.info_outline_rounded,
+                                  size: 30,
+                                  color: Color(0xFFFF5A5F),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No se puede cambiar de $_status a $nuevoEstado',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 22),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color.fromARGB(255, 175, 175, 175),
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Entendido',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          backgroundColor: Colors.orange,
                         ),
                       );
                     }

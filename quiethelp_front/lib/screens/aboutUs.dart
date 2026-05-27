@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../constants/app_theme.dart';
 import '../widgets/app_header.dart';
-import '../widgets/about_info_card.dart'; // 👈 NUEVO IMPORT
+import '../widgets/about_info_card.dart';
 import '../widgets/value_card.dart';
 import '../widgets/contact_line.dart';
 import 'studentHomePage.dart';
@@ -53,8 +53,6 @@ class AboutUs extends StatelessWidget {
                     const SizedBox(height: 40),
                     _buildHelpCard(),
                     const SizedBox(height: 40),
-                    _buildActionButton(context),
-                    const SizedBox(height: 48),
                     _buildFooter(),
                     const SizedBox(height: 16),
                   ],
@@ -106,7 +104,6 @@ class AboutUs extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 700),
         child: AboutInfoCard(
-          // 👈 AHORA USA AboutInfoCard
           title: 'Nuestra misión',
           child: Text(
             'Crear un canal de comunicación anónimo y seguro donde los estudiantes puedan compartir sus preocupaciones sobre bullying, problemas académicos o situaciones emocionales, garantizando una respuesta profesional y empática.',
@@ -170,7 +167,6 @@ class AboutUs extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 700),
         child: AboutInfoCard(
-          // 👈 AHORA USA AboutInfoCard
           title: '¿Necesitas más ayuda?',
           child: Column(
             children: [
@@ -215,38 +211,6 @@ class AboutUs extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 500),
-        child: SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const StudentHomePage()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.teal,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: AppBorders.circular14,
-              ),
-            ),
-            child: const Text(
-              'Enviar mensaje anónimo',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-            ),
           ),
         ),
       ),

@@ -26,7 +26,7 @@ class StatsGrid extends StatelessWidget {
             Expanded(
               child: _StatBox(
                 label: 'Pendientes', 
-                value: pendientes.toString(),  // ← Valor REAL
+                value: pendientes.toString(),
                 icon: Icons.inbox_outlined, 
                 onTap: () => onTap(0)
               )
@@ -35,7 +35,7 @@ class StatsGrid extends StatelessWidget {
             Expanded(
               child: _StatBox(
                 label: 'En revisión', 
-                value: enRevision.toString(),  // ← Valor REAL
+                value: enRevision.toString(),
                 icon: Icons.access_time, 
                 onTap: () => onTap(1)
               )
@@ -48,7 +48,7 @@ class StatsGrid extends StatelessWidget {
             Expanded(
               child: _StatBox(
                 label: 'Resueltos', 
-                value: resueltos.toString(),  // ← Valor REAL
+                value: resueltos.toString(),
                 icon: Icons.check_box_outlined, 
                 onTap: () => onTap(2)
               )
@@ -57,9 +57,9 @@ class StatsGrid extends StatelessWidget {
             Expanded(
               child: _StatBox(
                 label: 'Urgentes', 
-                value: urgentes.toString(),  // ← Valor REAL
+                value: urgentes.toString(),
                 icon: Icons.warning_amber_rounded, 
-                onTap: () => onTap(0)  // Urgentes lleva a Pendientes
+                onTap: () => onTap(3)
               )
             ),
           ],
