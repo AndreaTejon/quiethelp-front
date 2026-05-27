@@ -31,9 +31,11 @@ class _TokenPageState extends State<TokenPage> {
     final token = _controller.text.trim();
 
     if (token.isEmpty) {
-      _showSnackBar('Introduce un token válido');
-      return;
-    }
+  setState(() {
+    _errorDetails = 'Introduce un token válido';
+  });
+  return;
+}
 
     setState(() {
       _isValidating = true;
@@ -54,9 +56,8 @@ class _TokenPageState extends State<TokenPage> {
       } else {
         setState(() {
           _isValidating = false;
-          _errorDetails = 'El token no es válido o no existe en la base de datos';
+          _errorDetails = 'El token no es válido o ha expirado';
         });
-        _showSnackBar('Token inválido o expirado');
       }
     }).catchError((e) {
       if (!mounted) return;

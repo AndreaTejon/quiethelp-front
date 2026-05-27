@@ -20,6 +20,7 @@ class _SignInPageState extends State<SignInPage> {
 
   bool _obscure = true;
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -33,23 +34,26 @@ class _SignInPageState extends State<SignInPage> {
     final password = _passCtrl.text;
 
     if (email.isEmpty || password.isEmpty) {
-      _mostrarError('Completa email y contraseña');
+      setState(() {
+        _errorMessage = 'Completa email y contraseña';
+      });
       return;
     }
 
     if (!email.contains('@')) {
-      _mostrarError('Introduce un email válido');
+      setState(() {
+        _errorMessage = 'Introduce un email válido';
+      });
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
-      print('📩 Email enviado: "$email"');
-      print('🔐 Password length: ${password.length}');
-
-      final response =
-          await Supabase.instance.client.auth.signInWithPassword(
+      final response = await Supabase.instance.client.auth.signInWithPassword(
         email: email,
         password: password,
       );
@@ -67,47 +71,31 @@ class _SignInPageState extends State<SignInPage> {
         'metadata': user.userMetadata,
       };
 
-      print('✅ Login exitoso');
-      print('ID: ${user.id}');
-      print('Email: ${user.email}');
-
       if (!mounted) return;
 
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => ProfessorHomePage(
-            profesorData: profesorData,
-          ),
+          builder: (_) => ProfessorHomePage(profesorData: profesorData),
         ),
       );
-    } on AuthException catch (e) {
-      print('❌ AuthException message: ${e.message}');
-      print('❌ AuthException statusCode: ${e.statusCode}');
-
+    } on AuthException {
       if (!mounted) return;
 
-      _mostrarError(e.message);
+      setState(() {
+        _errorMessage = 'Contraseña o email incorrectos';
+      });
     } catch (e) {
-      print('❌ Error inesperado: $e');
-
       if (!mounted) return;
 
-      _mostrarError('Error de conexión. Intenta de nuevo');
+      setState(() {
+        _errorMessage = 'Error de conexión. Intenta de nuevo';
+      });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
-  }
-
-  void _mostrarError(String mensaje) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensaje),
-        backgroundColor: Colors.red,
-      ),
-    );
   }
 
   @override
@@ -122,16 +110,11 @@ class _SignInPageState extends State<SignInPage> {
           onPressed: () {
             Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(
-                builder: (_) => const HomePage(),
-              ),
+              MaterialPageRoute(builder: (_) => const HomePage()),
               (route) => false,
             );
           },
-          icon: const Icon(
-            Icons.arrow_back_ios_new,
-            size: 18,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
         ),
       ),
       body: SafeArea(
@@ -143,13 +126,9 @@ class _SignInPageState extends State<SignInPage> {
 
             return Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 800,
-                ),
+                constraints: const BoxConstraints(maxWidth: 800),
                 child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: horizontalPadding,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                   child: Column(
                     children: [
                       const SizedBox(height: 18),
@@ -215,22 +194,18 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                           filled: true,
                           fillColor: Colors.white,
-                          contentPadding:
-                              const EdgeInsets.symmetric(
+                          contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 16,
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(14),
                             borderSide: BorderSide(
-                              color:
-                                  Colors.black.withOpacity(0.12),
+                              color: Colors.black.withOpacity(0.12),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(14),
                             borderSide: const BorderSide(
                               color: teal,
                               width: 1.4,
@@ -283,28 +258,23 @@ class _SignInPageState extends State<SignInPage> {
                               _obscure
                                   ? Icons.visibility_outlined
                                   : Icons.visibility_off_outlined,
-                              color:
-                                  Colors.black.withOpacity(0.35),
+                              color: Colors.black.withOpacity(0.35),
                             ),
                           ),
                           filled: true,
                           fillColor: Colors.white,
-                          contentPadding:
-                              const EdgeInsets.symmetric(
+                          contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 16,
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(14),
                             borderSide: BorderSide(
-                              color:
-                                  Colors.black.withOpacity(0.12),
+                              color: Colors.black.withOpacity(0.12),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(14),
                             borderSide: const BorderSide(
                               color: teal,
                               width: 1.4,
@@ -312,30 +282,58 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                         ),
                       ),
-
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                color: Colors.red.shade700,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 26),
 
                       SizedBox(
                         width: double.infinity,
                         height: 62,
                         child: ElevatedButton(
-                          onPressed:
-                              _isLoading ? null : _onLogin,
+                          onPressed: _isLoading ? null : _onLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: teal,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           child: _isLoading
                               ? const SizedBox(
                                   width: 24,
                                   height: 24,
-                                  child:
-                                      CircularProgressIndicator(
+                                  child: CircularProgressIndicator(
                                     color: Colors.white,
                                     strokeWidth: 2,
                                   ),
@@ -344,8 +342,7 @@ class _SignInPageState extends State<SignInPage> {
                                   'Iniciar sesión',
                                   style: TextStyle(
                                     fontSize: 18,
-                                    fontWeight:
-                                        FontWeight.w800,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                         ),
