@@ -138,7 +138,7 @@ class _SignInPageState extends State<SignInPage> {
                       const SizedBox(height: 22),
 
                       const Text(
-                        'Acceso Comité',
+                        'Acceso Profesorado',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 30,

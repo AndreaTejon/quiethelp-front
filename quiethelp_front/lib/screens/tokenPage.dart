@@ -32,7 +32,7 @@ class _TokenPageState extends State<TokenPage> {
 
     if (token.isEmpty) {
   setState(() {
-    _errorDetails = 'Introduce un token válido';
+    _errorDetails = 'El token no puede estar vacío';
   });
   return;
 }

@@ -34,6 +34,10 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
   String? _token;
 
   Timer? _pollingTimer;
+  bool _isRefreshing = false;
+
+  // Cache para fechas parseadas
+  final Map<String, DateTime?> _fechasCache = {};
 
   @override
   void initState() {
@@ -41,20 +45,38 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
 
     _cargarTokenYConversaciones();
 
-    _pollingTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) async {
-        if (_token != null) {
-          await _cargarConversaciones(_token!);
-        }
-      },
-    );
+    // OPTIMIZACIÓN 1: Polling cada 30 segundos en lugar de 5
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (_token != null) {
+        await _refrescarSilencioso();
+      }
+    });
   }
 
   @override
   void dispose() {
     _pollingTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _refrescarSilencioso() async {
+    if (_isRefreshing || _token == null) return;
+
+    _isRefreshing = true;
+
+    try {
+      await _cargarConversaciones(_token!, mostrarErrores: false);
+    } finally {
+      _isRefreshing = false;
+    }
+  }
+
+  Future<void> _refrescarManual() async {
+    if (_token == null) return;
+
+    // Limpiar caché al refrescar manualmente
+    _fechasCache.clear();
+    await _cargarConversaciones(_token!, mostrarErrores: false);
   }
 
   Future<void> _cargarTokenYConversaciones() async {
@@ -75,21 +97,47 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     await _cargarConversaciones(token);
   }
 
+  // OPTIMIZACIÓN 2: Parseo de fechas con caché
   DateTime? _parseFecha(String? fecha) {
     if (fecha == null || fecha.trim().isEmpty) return null;
 
-    final iso = DateTime.tryParse(fecha);
+    final limpia = fecha.trim();
+
+    final iso = DateTime.tryParse(limpia);
     if (iso != null) return iso;
 
+    final regex = RegExp(r'^(\d{2})/(\d{2})/(\d{4})\s+(\d{2}):(\d{2})$');
+    final match = regex.firstMatch(limpia);
+
+    if (match != null) {
+      final dia = int.parse(match.group(1)!);
+      final mes = int.parse(match.group(2)!);
+      final anio = int.parse(match.group(3)!);
+      final hora = int.parse(match.group(4)!);
+      final minuto = int.parse(match.group(5)!);
+
+      return DateTime(anio, mes, dia, hora, minuto);
+    }
+
     return null;
+  }
+
+  DateTime? _parseFechaConCache(String? fecha, String mensajeId) {
+    if (_fechasCache.containsKey(mensajeId)) {
+      return _fechasCache[mensajeId];
+    }
+
+    final resultado = _parseFecha(fecha);
+    _fechasCache[mensajeId] = resultado;
+    return resultado;
   }
 
   String _previewUltimoMensaje(ConversacionResponse conv) {
     final mensajesOrdenados = [...conv.mensajes];
 
     mensajesOrdenados.sort((a, b) {
-      final fechaA = _parseFecha(a.fecha);
-      final fechaB = _parseFecha(b.fecha);
+      final fechaA = _parseFechaConCache(a.fecha, '${conv.id}_${a.id}');
+      final fechaB = _parseFechaConCache(b.fecha, '${conv.id}_${b.id}');
 
       if (fechaA == null && fechaB == null) return 0;
       if (fechaA == null) return 1;
@@ -109,7 +157,10 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     return ultimoMensaje.mensaje;
   }
 
-  Future<void> _cargarConversaciones(String token) async {
+  Future<void> _cargarConversaciones(
+    String token, {
+    bool mostrarErrores = true,
+  }) async {
     final uri = Uri.parse(
       '$_baseUrl/api/conversaciones/alumno',
     ).replace(queryParameters: {'token': token});
@@ -133,6 +184,57 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
             })
             .toList();
 
+        conversaciones.sort((a, b) {
+          DateTime? ultimaFechaA;
+          DateTime? ultimaFechaB;
+
+          if (a.mensajes.isNotEmpty) {
+            final mensajesA = [...a.mensajes];
+
+            mensajesA.sort((m1, m2) {
+              final f1 = _parseFechaConCache(m1.fecha, '${a.id}_${m1.id}');
+              final f2 = _parseFechaConCache(m2.fecha, '${a.id}_${m2.id}');
+
+              if (f1 == null && f2 == null) return 0;
+              if (f1 == null) return 1;
+              if (f2 == null) return -1;
+
+              return f1.compareTo(f2);
+            });
+
+            ultimaFechaA = _parseFechaConCache(
+              mensajesA.last.fecha,
+              '${a.id}_${mensajesA.last.id}',
+            );
+          }
+
+          if (b.mensajes.isNotEmpty) {
+            final mensajesB = [...b.mensajes];
+
+            mensajesB.sort((m1, m2) {
+              final f1 = _parseFechaConCache(m1.fecha, '${b.id}_${m1.id}');
+              final f2 = _parseFechaConCache(m2.fecha, '${b.id}_${m2.id}');
+
+              if (f1 == null && f2 == null) return 0;
+              if (f1 == null) return 1;
+              if (f2 == null) return -1;
+
+              return f1.compareTo(f2);
+            });
+
+            ultimaFechaB = _parseFechaConCache(
+              mensajesB.last.fecha,
+              '${b.id}_${mensajesB.last.id}',
+            );
+          }
+
+          if (ultimaFechaA == null && ultimaFechaB == null) return 0;
+          if (ultimaFechaA == null) return 1;
+          if (ultimaFechaB == null) return -1;
+
+          return ultimaFechaB.compareTo(ultimaFechaA);
+        });
+
         if (!mounted) return;
 
         setState(() {
@@ -143,7 +245,7 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
 
         print('Cargadas ${_conversaciones.length} conversaciones activas');
       } else {
-        if (!mounted) return;
+        if (!mounted || !mostrarErrores) return;
 
         setState(() {
           _error = 'Error al cargar historial';
@@ -153,7 +255,7 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     } catch (e) {
       print('Error: $e');
 
-      if (!mounted) return;
+      if (!mounted || !mostrarErrores) return;
 
       setState(() {
         _error = 'Error de conexión';
@@ -177,9 +279,7 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
   void _goToStudentHome() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => StudentHomePage(token: _token),
-      ),
+      MaterialPageRoute(builder: (_) => StudentHomePage(token: _token)),
     );
   }
 
@@ -193,19 +293,23 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
           final isDesktop = constraints.maxWidth >= 900;
           final horizontalPadding = isDesktop ? 64.0 : 16.0;
 
-          return Scrollbar(
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                14,
-                horizontalPadding,
-                18,
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1200),
-                  child: _buildBody(),
+          return RefreshIndicator(
+            onRefresh: _refrescarManual,
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  14,
+                  horizontalPadding,
+                  18,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: _buildBody(),
+                  ),
                 ),
               ),
             ),
@@ -253,6 +357,74 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     );
   }
 
+  // OPTIMIZACIÓN 3: Método extraído para cada tarjeta
+  Widget _buildChatCard(ConversacionResponse conv) {
+    final titulo = conv.emisor.tarjeta;
+    final estadoTexto = conv.estado ?? 'PENDIENTE';
+    final preview = _previewUltimoMensaje(conv);
+
+    final tieneRespuestas = conv.mensajes.any(
+      (msg) => msg.emisor == 'profesor',
+    );
+
+    final tieneNoLeidos = conv.mensajes.any(
+      (msg) => msg.emisor == 'profesor' && msg.leido == false,
+    );
+
+    return _ChatHistoryCard(
+      titulo: titulo,
+      tag: conv.emisor.tarjeta,
+      preview: preview,
+      dateText: conv.fechaInicio ?? '',
+      placeText: 'IES Ramiro de Maeztu (28001)',
+      courseText: _combinarCursoGrupo(
+        conv.emisor.curso,
+        conv.emisor.grupo,
+      ),
+      estado: estadoTexto,
+      tieneRespuestas: tieneRespuestas,
+      tieneNoLeidos: tieneNoLeidos,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatPageStudent(
+              conversacionId: conv.id,
+              token: _token!,
+              title: titulo,
+              tag: conv.emisor.tarjeta,
+              dateText: conv.fechaInicio ?? '',
+              placeText: 'IES Ramiro de Maeztu (28001)',
+              courseText: _combinarCursoGrupo(
+                conv.emisor.curso,
+                conv.emisor.grupo,
+              ),
+              estado: estadoTexto,
+            ),
+          ),
+        );
+
+        // OPTIMIZACIÓN 4: Usar refresh silencioso en lugar de recarga completa
+        if (_token != null && mounted) {
+          await _refrescarSilencioso();
+        }
+      },
+    );
+  }
+
+  Widget _buildInfoText() {
+    return Text(
+      'Tus conversaciones sólo aparecen aquí cuando un profesor te responde pidiendo más información.',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: 12,
+        height: 1.4,
+        fontWeight: FontWeight.w500,
+        color: Colors.black.withOpacity(0.4),
+      ),
+    );
+  }
+
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
@@ -272,16 +444,9 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
         child: Column(
           children: [
             const SizedBox(height: 100),
-            const Icon(
-              Icons.error_outline,
-              size: 48,
-              color: Colors.red,
-            ),
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
             const SizedBox(height: 20),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-            ),
+            Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
@@ -289,7 +454,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
                   _isLoading = true;
                   _error = null;
                 });
-
                 _cargarTokenYConversaciones();
               },
               child: const Text('Reintentar'),
@@ -303,25 +467,15 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
       return Column(
         children: [
           const SizedBox(height: 100),
-          const Icon(
-            Icons.chat_bubble_outline,
-            size: 48,
-            color: Colors.grey,
-          ),
+          const Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey),
           const SizedBox(height: 20),
           const Text(
             'No hay respuestas del profesor todavía',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
+            style: TextStyle(fontSize: 16, color: Colors.grey),
           ),
           const SizedBox(height: 40),
           Container(
-            margin: const EdgeInsets.only(
-              top: 8,
-              bottom: 16,
-            ),
+            margin: const EdgeInsets.only(top: 8, bottom: 16),
             height: 1,
             color: Colors.black.withOpacity(0.08),
           ),
@@ -330,88 +484,24 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
       );
     }
 
+    // Versión original restaurada (funciona correctamente)
     return Column(
       children: [
         ..._conversaciones.map((conv) {
-          final titulo = conv.emisor.tarjeta;
-          final estadoTexto = conv.estado ?? 'PENDIENTE';
-          final preview = _previewUltimoMensaje(conv);
-
-          final tieneRespuestas = conv.mensajes.any(
-            (msg) => msg.emisor == 'profesor',
-          );
-
-          final tieneNoLeidos = conv.mensajes.any(
-            (msg) => msg.emisor == 'profesor' && msg.leido == false,
-          );
-
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: _ChatHistoryCard(
-              titulo: titulo,
-              tag: conv.emisor.tarjeta,
-              preview: preview,
-              dateText: conv.fechaInicio ?? '',
-              placeText: 'IES Ramiro de Maeztu (28001)',
-              courseText: _combinarCursoGrupo(
-                conv.emisor.curso,
-                conv.emisor.grupo,
-              ),
-              estado: estadoTexto,
-              tieneRespuestas: tieneRespuestas,
-              tieneNoLeidos: tieneNoLeidos,
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChatPageStudent(
-                      conversacionId: conv.id,
-                      token: _token!,
-                      title: titulo,
-                      tag: conv.emisor.tarjeta,
-                      dateText: conv.fechaInicio ?? '',
-                      placeText: 'IES Ramiro de Maeztu (28001)',
-                      courseText: _combinarCursoGrupo(
-                        conv.emisor.curso,
-                        conv.emisor.grupo,
-                      ),
-                      estado: estadoTexto,
-                    ),
-                  ),
-                );
-
-                if (_token != null) {
-                  await _cargarConversaciones(_token!);
-                }
-              },
-            ),
+            child: _buildChatCard(conv),
           );
         }),
         const SizedBox(height: 20),
         Container(
-          margin: const EdgeInsets.only(
-            top: 8,
-            bottom: 16,
-          ),
+          margin: const EdgeInsets.only(top: 8, bottom: 16),
           height: 1,
           color: Colors.black.withOpacity(0.08),
         ),
         _buildInfoText(),
         const SizedBox(height: 18),
       ],
-    );
-  }
-
-  Widget _buildInfoText() {
-    return Text(
-      'Tus conversaciones sólo aparecen aquí cuando un profesor te responde pidiendo más información.',
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        fontSize: 12,
-        height: 1.4,
-        fontWeight: FontWeight.w500,
-        color: Colors.black.withOpacity(0.4),
-      ),
     );
   }
 }
@@ -563,8 +653,7 @@ class _ChatHistoryCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight:
-                    tieneNoLeidos ? FontWeight.w800 : FontWeight.w600,
+                fontWeight: tieneNoLeidos ? FontWeight.w800 : FontWeight.w600,
                 color: Colors.black.withOpacity(0.55),
               ),
             ),
@@ -576,10 +665,7 @@ class _ChatHistoryCard extends StatelessWidget {
                 if (isWide) {
                   return Row(
                     children: [
-                      _buildMetaItem(
-                        icon: Icons.access_time,
-                        text: dateText,
-                      ),
+                      _buildMetaItem(icon: Icons.access_time, text: dateText),
                       const SizedBox(width: 16),
                       _buildMetaItem(
                         icon: Icons.location_on_outlined,
@@ -599,10 +685,7 @@ class _ChatHistoryCard extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildMetaItem(
-                      icon: Icons.access_time,
-                      text: dateText,
-                    ),
+                    _buildMetaItem(icon: Icons.access_time, text: dateText),
                     const SizedBox(height: 8),
                     _buildMetaItem(
                       icon: Icons.location_on_outlined,
@@ -625,18 +708,11 @@ class _ChatHistoryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMetaItem({
-    required IconData icon,
-    required String text,
-  }) {
+  Widget _buildMetaItem({required IconData icon, required String text}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 14,
-          color: Colors.black.withOpacity(0.35),
-        ),
+        Icon(icon, size: 14, color: Colors.black.withOpacity(0.35)),
         const SizedBox(width: 6),
         Flexible(
           child: Text(

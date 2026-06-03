@@ -123,7 +123,7 @@ class HomePage extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         HomeButton(
-          text: 'Acceso comité',
+          text: 'Acceso profesorado',
           onPressed: () {
             Navigator.push(
               context,
@@ -140,7 +140,7 @@ class HomePage extends StatelessWidget {
 
   Widget _buildDisclaimer() {
     return Text(
-      'Si estás en peligro inmediato, contacta a las autoridades',
+      'Si estás en peligro inmediato, contacta con las autoridades',
       textAlign: TextAlign.center,
       style: TextStyle(
         fontSize: 11,

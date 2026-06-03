@@ -45,6 +45,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
   bool _hasUnreadProfessorMessages = false;
 
   Timer? _notificationTimer;
+  bool _isRefreshingNotifications = false;
 
   String get _baseUrl {
     if (kIsWeb) {
@@ -87,14 +88,19 @@ class _StudentHomePageState extends State<StudentHomePage> {
   bool get _isValid => topic != null && msgCtrl.text.trim().isNotEmpty;
 
   Future<void> _cargarNotificaciones() async {
-    final token = widget.token ?? await TokenStorage.getToken();
-    if (token == null) return;
+    if (_isRefreshingNotifications) return;
 
-    final uri = Uri.parse(
-      '$_baseUrl/api/conversaciones/alumno',
-    ).replace(queryParameters: {'token': token});
+    _isRefreshingNotifications = true;
+
+    final token = widget.token ?? await TokenStorage.getToken();
 
     try {
+      if (token == null) return;
+
+      final uri = Uri.parse(
+        '$_baseUrl/api/conversaciones/alumno',
+      ).replace(queryParameters: {'token': token});
+
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
@@ -118,7 +124,13 @@ class _StudentHomePageState extends State<StudentHomePage> {
       }
     } catch (e) {
       print('Error cargando notificaciones: $e');
+    } finally {
+      _isRefreshingNotifications = false;
     }
+  }
+
+  Future<void> _refrescarManual() async {
+    await _cargarNotificaciones();
   }
 
   void _validarTokenAlIniciar() async {
@@ -229,9 +241,10 @@ class _StudentHomePageState extends State<StudentHomePage> {
               decoded["emisor"]?["urgente"] == true;
 
           Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(builder: (_) => MessageSent(
-              token: widget.token!,
-              urgente: urgente)),
+            MaterialPageRoute(
+              builder: (_) =>
+                  MessageSent(token: widget.token!, urgente: urgente),
+            ),
           );
         }
 
@@ -274,103 +287,103 @@ class _StudentHomePageState extends State<StudentHomePage> {
   }
 
   void _showErrorDialog(String message) {
-  if (!mounted) return;
+    if (!mounted) return;
 
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.topCenter,
-        children: [
-          Container(
-            width: double.infinity,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            Container(
+              width: double.infinity,
               constraints: const BoxConstraints(maxWidth: 450),
-            margin: const EdgeInsets.only(top: 28),
-            padding: const EdgeInsets.fromLTRB(24, 46, 24, 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.error_outline_rounded,
-                  color: AppColors.errorRed,
-                  size: 28,
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+              margin: const EdgeInsets.only(top: 28),
+              padding: const EdgeInsets.fromLTRB(24, 46, 24, 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
                   ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      style: TextButton.styleFrom(
-                        backgroundColor: Colors.grey.shade200,
-                        foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 22,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text('Volver'),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: AppColors.errorRed,
+                    size: 28,
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
                     ),
-                    const SizedBox(width: 12),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _send();
-                      },
-                      style: TextButton.styleFrom(
-                        backgroundColor: Colors.grey.shade200,
-                        foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 22,
-                          vertical: 12,
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.grey.shade200,
+                          foregroundColor: Colors.black87,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 22,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                        child: const Text('Volver'),
                       ),
-                      child: const Text('Reintentar'),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 12),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _send();
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.grey.shade200,
+                          foregroundColor: Colors.black87,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 22,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(
@@ -462,20 +475,24 @@ class _StudentHomePageState extends State<StudentHomePage> {
         builder: (context, constraints) {
           final pad = constraints.maxWidth >= 900 ? 64.0 : 22.0;
 
-          return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(pad, 14, pad, 18),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1200),
-                child: Column(
-                  children: [
-                    _buildMessageCard(),
-                    const SizedBox(height: 18),
-                    _buildSecurityCard(),
-                    const SizedBox(height: 18),
-                    AppFooter(onAbout: _about),
-                    SizedBox(height: w < 380 ? 18 : 26),
-                  ],
+          return RefreshIndicator(
+            onRefresh: _refrescarManual,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(pad, 14, pad, 18),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: Column(
+                    children: [
+                      _buildMessageCard(),
+                      const SizedBox(height: 18),
+                      _buildSecurityCard(),
+                      const SizedBox(height: 18),
+                      AppFooter(onAbout: _about),
+                      SizedBox(height: w < 380 ? 18 : 26),
+                    ],
+                  ),
                 ),
               ),
             ),

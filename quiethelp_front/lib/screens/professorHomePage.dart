@@ -1,4 +1,4 @@
-import 'dart:async'; // Polling: permite actualizar datos cada X segundos
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -39,8 +39,10 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
   bool _isLoading = true;
   String? _error;
 
-  // Polling: timer que refresca automáticamente las conversaciones
   Timer? _refreshTimer;
+  bool _isRefreshing = false;
+
+  final DateFormat _dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
 
   String get _baseUrl {
     if (kIsWeb) {
@@ -53,12 +55,13 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
   void initState() {
     super.initState();
 
-    print('Profesor logueado: ${widget.profesorData['nombre']}');
-    print('ID: ${widget.profesorData['id']}');
+    if (kDebugMode) {
+      print('Profesor logueado: ${widget.profesorData['nombre']}');
+      print('ID: ${widget.profesorData['id']}');
+    }
 
     _cargarDatos();
 
-    // Polling: refresca los datos automáticamente cada 5 segundos
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) {
         _refrescarDatosSilencioso();
@@ -68,7 +71,6 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
 
   @override
   void dispose() {
-    // Polling: detiene el timer al salir de la pantalla
     _refreshTimer?.cancel();
     super.dispose();
   }
@@ -100,8 +102,11 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     }
   }
 
-  // Polling: actualiza datos sin mostrar pantalla de carga
-  Future<void> _refrescarDatosSilencioso() async {
+  Future<void> _refrescarManual() async {
+    if (_isRefreshing) return;
+
+    _isRefreshing = true;
+
     try {
       await Future.wait([
         _cargarConversaciones(),
@@ -109,7 +114,31 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
         _cargarNotificacionesRevision(),
       ]);
     } catch (e) {
-      print('Error refrescando datos: $e');
+      if (kDebugMode) {
+        print('Error en refresh manual: $e');
+      }
+    } finally {
+      _isRefreshing = false;
+    }
+  }
+
+  Future<void> _refrescarDatosSilencioso() async {
+    if (_isRefreshing) return;
+
+    _isRefreshing = true;
+
+    try {
+      await Future.wait([
+        _cargarConversaciones(),
+        _cargarResumen(),
+        _cargarNotificacionesRevision(),
+      ]);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error refrescando datos: $e');
+      }
+    } finally {
+      _isRefreshing = false;
     }
   }
 
@@ -117,7 +146,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     final uri = Uri.parse('$_baseUrl/api/conversaciones/dashboard').replace(
       queryParameters: {
         'estado': 'EN_REVISION',
-        'revisorId': widget.profesorData['id'],
+        'revisorId': widget.profesorData['id'].toString(),
       },
     );
 
@@ -144,33 +173,49 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
         });
       }
     } catch (e) {
-      print('Error cargando notificaciones revisión: $e');
+      if (kDebugMode) {
+        print('Error cargando notificaciones revisión: $e');
+      }
     }
   }
 
   Future<void> _cargarConversaciones() async {
+    final tabIndexSolicitado = _tabIndex;
+    final categorySolicitada = _category;
+    final soloUrgentesSolicitado = _soloUrgentes;
+
     final url = '$_baseUrl/api/conversaciones/dashboard';
 
     String? estado;
-    if (_tabIndex == 0) estado = 'PENDIENTE';
-    if (_tabIndex == 1) estado = 'EN_REVISION';
-    if (_tabIndex == 2) estado = 'RESUELTO';
+    if (tabIndexSolicitado == 0) estado = 'PENDIENTE';
+    if (tabIndexSolicitado == 1) estado = 'EN_REVISION';
+    if (tabIndexSolicitado == 2) estado = 'RESUELTO';
 
     String? tarjeta;
-    if (_category != 'Todos') tarjeta = _category;
+    if (categorySolicitada != 'Todos') tarjeta = categorySolicitada;
 
     final queryParams = <String, String>{};
 
     if (estado != null) queryParams['estado'] = estado;
     if (tarjeta != null) queryParams['tarjeta'] = tarjeta;
 
-    queryParams['revisorId'] = widget.profesorData['id'];
+    queryParams['revisorId'] = widget.profesorData['id'].toString();
 
     final uri = Uri.parse(url).replace(queryParameters: queryParams);
 
-    print('Cargando conversaciones: $uri');
+    if (kDebugMode) {
+      print('Cargando conversaciones: $uri');
+    }
 
     final response = await http.get(uri);
+
+    if (!mounted) return;
+
+    if (tabIndexSolicitado != _tabIndex ||
+        categorySolicitada != _category ||
+        soloUrgentesSolicitado != _soloUrgentes) {
+      return;
+    }
 
     if (response.statusCode == 200) {
       final List<dynamic> jsonList = jsonDecode(response.body);
@@ -179,58 +224,58 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
           .map((json) => ConversacionResponse.fromJson(json))
           .toList();
 
-      if (_soloUrgentes) {
+      if (soloUrgentesSolicitado) {
         nuevasConversaciones = nuevasConversaciones
             .where((conv) => conv.emisor.urgente == true)
             .toList();
       }
 
-      // Orden: la conversación con el mensaje más reciente aparece arriba
-      // Dentro de _cargarConversaciones(), después de obtener las conversaciones
       nuevasConversaciones.sort((a, b) {
         final fechaA = _fechaMasRecienteConversacion(a);
         final fechaB = _fechaMasRecienteConversacion(b);
-        return fechaB.compareTo(fechaA); // mas reciente PRIMERO (arriba)
+        return fechaB.compareTo(fechaA);
       });
-
-      if (!mounted) return;
 
       setState(() {
         _conversaciones = nuevasConversaciones;
       });
 
-      print('Cargadas ${_conversaciones.length} conversaciones');
+      if (kDebugMode) {
+        print('Cargadas ${_conversaciones.length} conversaciones');
+      }
     } else {
-      print('Error ${response.statusCode}: ${response.body}');
+      if (kDebugMode) {
+        print('Error ${response.statusCode}: ${response.body}');
+      }
+
       throw Exception('Error al cargar conversaciones');
     }
   }
 
-  // Orden: busca la fecha más reciente entre todos los mensajes de una conversación
   DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
-    final formatter = DateFormat('dd/MM/yyyy HH:mm');
-
     DateTime fechaMasReciente = DateTime(2000);
 
-    // Parsear fechaInicio
     if (conversacion.fechaInicio != null &&
         conversacion.fechaInicio!.isNotEmpty) {
       try {
-        fechaMasReciente = formatter.parse(conversacion.fechaInicio!);
+        fechaMasReciente = _dateFormatter.parse(conversacion.fechaInicio!);
       } catch (e) {
-        print('Error parseando fechaInicio: $e');
+        if (kDebugMode) {
+          print('Error parseando fechaInicio: $e');
+        }
       }
     }
 
-    // Buscar la fecha más reciente entre todos los mensajes
     for (final mensaje in conversacion.mensajes) {
       try {
-        final fechaMensaje = formatter.parse(mensaje.fecha);
+        final fechaMensaje = _dateFormatter.parse(mensaje.fecha);
         if (fechaMensaje.isAfter(fechaMasReciente)) {
           fechaMasReciente = fechaMensaje;
         }
       } catch (e) {
-        print('Error parseando fecha mensaje: $e');
+        if (kDebugMode) {
+          print('Error parseando fecha mensaje: $e');
+        }
       }
     }
 
@@ -240,7 +285,9 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
   Future<void> _cargarResumen() async {
     final url = '$_baseUrl/api/conversaciones/resumen';
 
-    print('Cargando resumen: $url');
+    if (kDebugMode) {
+      print('Cargando resumen: $url');
+    }
 
     final response = await http.get(Uri.parse(url));
 
@@ -255,9 +302,14 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
         _resumen = nuevoResumen;
       });
 
-      print('Resumen cargado: Pendientes: ${_resumen?.pendientes}');
+      if (kDebugMode) {
+        print('Resumen cargado: Pendientes: ${_resumen?.pendientes}');
+      }
     } else {
-      print('Error al cargar resumen: ${response.statusCode}');
+      if (kDebugMode) {
+        print('Error al cargar resumen: ${response.statusCode}');
+      }
+
       throw Exception('Error al cargar resumen');
     }
   }
@@ -268,10 +320,14 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
     try {
       await Supabase.instance.client.auth.signOut();
     } catch (e) {
-      print('Error al cerrar sesión en Supabase: $e');
+      if (kDebugMode) {
+        print('Error al cerrar sesión en Supabase: $e');
+      }
     }
 
-    print('Sesión cerrada correctamente');
+    if (kDebugMode) {
+      print('Sesión cerrada correctamente');
+    }
 
     if (mounted) {
       Navigator.pushAndRemoveUntil(
@@ -335,7 +391,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
       ),
     );
 
-    await _cargarDatos();
+    await _refrescarManual();
   }
 
   @override
@@ -347,12 +403,16 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
         builder: (context, c) {
           final pad = c.maxWidth >= 900 ? 64.0 : 22.0;
 
-          return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(pad, 14, pad, 24),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1200),
-                child: _buildBody(),
+          return RefreshIndicator(
+            onRefresh: _refrescarManual,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(pad, 14, pad, 24),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: _buildBody(),
+                ),
               ),
             ),
           );
@@ -399,23 +459,26 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
           resueltos: _resumen?.resueltos ?? 0,
           urgentes: _resumen?.urgentes ?? 0,
           onTap: (i) {
-  setState(() {
-    if (i == 3) {
-      _soloUrgentes = true;
-    } else {
-      _tabIndex = i;
-      _soloUrgentes = false;
-    }
-  });
+            setState(() {
+              if (i == 3) {
+                _soloUrgentes = true;
+              } else {
+                _tabIndex = i;
+                _soloUrgentes = false;
+              }
+            });
 
-  _cargarConversaciones();
-},
+            _cargarConversaciones();
+          },
         ),
         const SizedBox(height: 28),
         CategoryFilter(
           value: _category,
           onChanged: (v) {
-            setState(() => _category = v);
+            setState(() {
+              _category = v;
+            });
+
             _cargarConversaciones();
           },
         ),
@@ -424,12 +487,13 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
           index: _tabIndex,
           hasUnreadInReview: _hasUnreadInReview,
           onChanged: (i) {
-  setState(() {
-    _tabIndex = i;
-  });
+            setState(() {
+              _tabIndex = i;
+              _soloUrgentes = false;
+            });
 
-  _cargarConversaciones();
-},
+            _cargarConversaciones();
+          },
         ),
         const SizedBox(height: 32),
         ..._buildMessageList(),
