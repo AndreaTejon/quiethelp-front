@@ -7,7 +7,7 @@ class TokenStorage {
   static Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, token);
-    print('✅ Token guardado: $token');
+    print('Token guardado: $token');
   }
   
   // Obtener token guardado
@@ -20,7 +20,7 @@ class TokenStorage {
   static Future<void> clearToken() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
-    print('🔓 Token eliminado');
+    print('Token eliminado');
   }
   
   // Verificar si hay token
