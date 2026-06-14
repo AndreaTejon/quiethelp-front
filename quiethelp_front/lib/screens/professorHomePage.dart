@@ -42,7 +42,7 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
   Timer? _refreshTimer;
   bool _isRefreshing = false;
 
-  final DateFormat _dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
+  final DateFormat _dateFormatter = DateFormat('dd/MM/yyyy HH:mm:ss');
 
   String get _baseUrl {
     if (kIsWeb) {
@@ -230,57 +230,16 @@ class _ProfessorHomePageState extends State<ProfessorHomePage> {
             .toList();
       }
 
-      nuevasConversaciones.sort((a, b) {
-        final fechaA = _fechaMasRecienteConversacion(a);
-        final fechaB = _fechaMasRecienteConversacion(b);
-        return fechaB.compareTo(fechaA);
-      });
+nuevasConversaciones.sort((a, b) => b.id.compareTo(a.id));
 
-      setState(() {
-        _conversaciones = nuevasConversaciones;
-      });
+setState(() {
+  _conversaciones = nuevasConversaciones;
+});
 
-      if (kDebugMode) {
-        print('Cargadas ${_conversaciones.length} conversaciones');
-      }
-    } else {
-      if (kDebugMode) {
-        print('Error ${response.statusCode}: ${response.body}');
-      }
+if (kDebugMode) { //para que el print solo salga en debug
+  print('Cargadas ${_conversaciones.length} conversaciones');
+}
 
-      throw Exception('Error al cargar conversaciones');
-    }
-  }
-
-  DateTime _fechaMasRecienteConversacion(ConversacionResponse conversacion) {
-    DateTime fechaMasReciente = DateTime(2000);
-
-    if (conversacion.fechaInicio != null &&
-        conversacion.fechaInicio!.isNotEmpty) {
-      try {
-        fechaMasReciente = _dateFormatter.parse(conversacion.fechaInicio!);
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error parseando fechaInicio: $e');
-        }
-      }
-    }
-
-    for (final mensaje in conversacion.mensajes) {
-      try {
-        final fechaMensaje = _dateFormatter.parse(mensaje.fecha);
-        if (fechaMensaje.isAfter(fechaMasReciente)) {
-          fechaMasReciente = fechaMensaje;
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error parseando fecha mensaje: $e');
-        }
-      }
-    }
-
-    return fechaMasReciente;
-  }
 
   Future<void> _cargarResumen() async {
     final url = '$_baseUrl/api/conversaciones/resumen';

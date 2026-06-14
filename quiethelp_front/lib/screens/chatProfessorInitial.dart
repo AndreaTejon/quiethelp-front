@@ -92,8 +92,8 @@ class _ChatProfessorInitialPageState extends State<ChatProfessorInitialPage> {
     if (iso != null) return iso;
 
     final formatos = [
+      'dd/MM/yyyy HH:mm:ss:ss',
       'dd/MM/yyyy HH:mm:ss',
-      'dd/MM/yyyy HH:mm',
       'yyyy-MM-dd HH:mm:ss',
       'yyyy-MM-dd HH:mm',
     ];

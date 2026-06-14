@@ -36,16 +36,12 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
   Timer? _pollingTimer;
   bool _isRefreshing = false;
 
-  // Cache para fechas parseadas
-  final Map<String, DateTime?> _fechasCache = {};
-
   @override
   void initState() {
     super.initState();
 
     _cargarTokenYConversaciones();
 
-    // OPTIMIZACIÓN 1: Polling cada 30 segundos en lugar de 5
     _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_token != null) {
         await _refrescarSilencioso();
@@ -73,9 +69,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
 
   Future<void> _refrescarManual() async {
     if (_token == null) return;
-
-    // Limpiar caché al refrescar manualmente
-    _fechasCache.clear();
     await _cargarConversaciones(_token!, mostrarErrores: false);
   }
 
@@ -97,56 +90,11 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     await _cargarConversaciones(token);
   }
 
-  // OPTIMIZACIÓN 2: Parseo de fechas con caché
-  DateTime? _parseFecha(String? fecha) {
-    if (fecha == null || fecha.trim().isEmpty) return null;
-
-    final limpia = fecha.trim();
-
-    final iso = DateTime.tryParse(limpia);
-    if (iso != null) return iso;
-
-    final regex = RegExp(r'^(\d{2})/(\d{2})/(\d{4})\s+(\d{2}):(\d{2})$');
-    final match = regex.firstMatch(limpia);
-
-    if (match != null) {
-      final dia = int.parse(match.group(1)!);
-      final mes = int.parse(match.group(2)!);
-      final anio = int.parse(match.group(3)!);
-      final hora = int.parse(match.group(4)!);
-      final minuto = int.parse(match.group(5)!);
-
-      return DateTime(anio, mes, dia, hora, minuto);
-    }
-
-    return null;
-  }
-
-  DateTime? _parseFechaConCache(String? fecha, String mensajeId) {
-    if (_fechasCache.containsKey(mensajeId)) {
-      return _fechasCache[mensajeId];
-    }
-
-    final resultado = _parseFecha(fecha);
-    _fechasCache[mensajeId] = resultado;
-    return resultado;
-  }
-
   String _previewUltimoMensaje(ConversacionResponse conv) {
-    final mensajesOrdenados = [...conv.mensajes];
+    if (conv.mensajes.isEmpty) return '';
 
-    mensajesOrdenados.sort((a, b) {
-      final fechaA = _parseFechaConCache(a.fecha, '${conv.id}_${a.id}');
-      final fechaB = _parseFechaConCache(b.fecha, '${conv.id}_${b.id}');
-
-      if (fechaA == null && fechaB == null) return 0;
-      if (fechaA == null) return 1;
-      if (fechaB == null) return -1;
-
-      return fechaA.compareTo(fechaB);
-    });
-
-    if (mensajesOrdenados.isEmpty) return '';
+    final mensajesOrdenados = [...conv.mensajes]
+      ..sort((a, b) => a.id.compareTo(b.id));
 
     final ultimoMensaje = mensajesOrdenados.last;
 
@@ -184,56 +132,7 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
             })
             .toList();
 
-        conversaciones.sort((a, b) {
-          DateTime? ultimaFechaA;
-          DateTime? ultimaFechaB;
-
-          if (a.mensajes.isNotEmpty) {
-            final mensajesA = [...a.mensajes];
-
-            mensajesA.sort((m1, m2) {
-              final f1 = _parseFechaConCache(m1.fecha, '${a.id}_${m1.id}');
-              final f2 = _parseFechaConCache(m2.fecha, '${a.id}_${m2.id}');
-
-              if (f1 == null && f2 == null) return 0;
-              if (f1 == null) return 1;
-              if (f2 == null) return -1;
-
-              return f1.compareTo(f2);
-            });
-
-            ultimaFechaA = _parseFechaConCache(
-              mensajesA.last.fecha,
-              '${a.id}_${mensajesA.last.id}',
-            );
-          }
-
-          if (b.mensajes.isNotEmpty) {
-            final mensajesB = [...b.mensajes];
-
-            mensajesB.sort((m1, m2) {
-              final f1 = _parseFechaConCache(m1.fecha, '${b.id}_${m1.id}');
-              final f2 = _parseFechaConCache(m2.fecha, '${b.id}_${m2.id}');
-
-              if (f1 == null && f2 == null) return 0;
-              if (f1 == null) return 1;
-              if (f2 == null) return -1;
-
-              return f1.compareTo(f2);
-            });
-
-            ultimaFechaB = _parseFechaConCache(
-              mensajesB.last.fecha,
-              '${b.id}_${mensajesB.last.id}',
-            );
-          }
-
-          if (ultimaFechaA == null && ultimaFechaB == null) return 0;
-          if (ultimaFechaA == null) return 1;
-          if (ultimaFechaB == null) return -1;
-
-          return ultimaFechaB.compareTo(ultimaFechaA);
-        });
+        conversaciones.sort((a, b) => b.id.compareTo(a.id));
 
         if (!mounted) return;
 
@@ -357,7 +256,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
     );
   }
 
-  // OPTIMIZACIÓN 3: Método extraído para cada tarjeta
   Widget _buildChatCard(ConversacionResponse conv) {
     final titulo = conv.emisor.tarjeta;
     final estadoTexto = conv.estado ?? 'PENDIENTE';
@@ -404,7 +302,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
           ),
         );
 
-        // OPTIMIZACIÓN 4: Usar refresh silencioso en lugar de recarga completa
         if (_token != null && mounted) {
           await _refrescarSilencioso();
         }
@@ -484,7 +381,6 @@ class _ChatHistoryStudentState extends State<ChatHistoryStudent> {
       );
     }
 
-    // Versión original restaurada (funciona correctamente)
     return Column(
       children: [
         ..._conversaciones.map((conv) {
